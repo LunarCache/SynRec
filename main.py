@@ -17,8 +17,6 @@ import seaborn as sns
 from sklearn.manifold import TSNE
 import numpy as np
 from collections import OrderedDict, defaultdict
-from keys.c_moe import PointWiseFeedForward
-import torch.optim as optim
 
 # ANSI color codes for terminal output
 RESET = "\033[0m"
@@ -966,7 +964,6 @@ def main():
     if args.use_swanlab:
         swanlab.finish()
     # --- End SwanLab Integration ---
-    # sampler.close() # The new sampler does not need to be closed.
     print("Done")
 
 if __name__ == '__main__':
