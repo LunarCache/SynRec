@@ -150,13 +150,13 @@ class FourierRatingEncoder(nn.Module):
         # 投影到hidden_units维度并扩展到序列长度
         freq_projected = self.freq_projection(freq_features)  # (batch, hidden)
         
-        # 🚀 方案1改进：为每个位置创建不同的频域特征（几乎零开销）
+        # 改进：为每个位置创建不同的频域特征（几乎零开销）
         # 创建位置权重：从1开始，避免位置0的问题
         position_weights = torch.arange(1, seq_len+1, device=rating_seq.device).float()
         position_weights = position_weights.unsqueeze(0).unsqueeze(-1)  # (1, seq, 1)
         
         # 位置调制：使用正弦函数创建轻微的位置差异
-        # 0.1是调制强度，0.1是频率因子，可以根据实验效果调整
+        # 0.15是调制强度，0.05是频率因子，可以根据实验效果调整
         position_scale = 1.0 + 0.15 * torch.sin(position_weights * 0.05)  # (1, seq, 1)
         
         # 为每个位置创建差异化的频域特征

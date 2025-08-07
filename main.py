@@ -7,7 +7,7 @@ from keys.model import HAGMRec
 from keys.utils import *
 import random
 from torch.utils.tensorboard import SummaryWriter
-import wandb
+import swanlab
 # Set matplotlib backend before importing pyplot
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
@@ -125,7 +125,7 @@ def parse_args():
     parser.add_argument('--gate_temperature', default=2.0, type=float, help='Initial temperature for gate softmax')
     parser.add_argument('--min_gate_temperature', default=0.1, type=float, help='Minimum temperature for gate softmax')
     parser.add_argument('--temperature_decay', default=0.995, type=float, help='Temperature decay rate per step')
-    parser.add_argument('--use_specialization_loss', default=False, type=str2bool, help='Enable specialization loss for expert specialization')
+    parser.add_argument('--use_specialization_loss', default=True, type=str2bool, help='Enable specialization loss for expert specialization')
     parser.add_argument('--specialization_weight', default=0.01, type=float, help='Weight for specialization loss')
     parser.add_argument('--use_contrastive_loss', default=True, type=str2bool, help='Enable contrastive learning for expert specialization')
     parser.add_argument('--contrastive_weight', default=0.01, type=float, help='Weight for contrastive loss')
@@ -137,10 +137,10 @@ def parse_args():
     parser.add_argument('--tsne_sample_size', default=512, type=int, help='Number of points to sample for t-SNE plot')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for data loading.')
     # --- End MoE Integration ---
-    # --- WandB Integration ---
-    parser.add_argument('--wandb_project', type=str, default='CMREC', help='WandB project name')
-    parser.add_argument('--use_wandb', default=True, type=str2bool, help='Enable/Disable WandB')
-    # --- End WandB Integration ---
+    # --- SwanLab Integration ---
+    parser.add_argument('--swanlab_project', type=str, default='CMREC', help='SwanLab project name')
+    parser.add_argument('--use_swanlab', default=True, type=str2bool, help='Enable/Disable SwanLab')
+    # --- End SwanLab Integration ---
     args = parser.parse_args()
     
     # Check compatibility between rating strategy and other options
@@ -302,12 +302,12 @@ def _log_single_domain_fourier_attention(writer, step, short_term_attn, long_ter
         # Log to TensorBoard
         writer.add_figure(f'{prefix}/Layer_{layer_idx}_Detailed', fig, step)
         
-        # Log to WandB if enabled
-        if wandb.run is not None:
+        # Log to SwanLab if enabled
+        if swanlab.get_run() is not None:
             # 使用与TensorBoard一致的命名，包含领域信息
-            wandb_key = f"rating_attention_detailed/{prefix.lower()}_layer_{layer_idx}_fourier_analysis"
-            wandb.log({
-                wandb_key: wandb.Image(fig), 
+            swanlab_key = f"rating_attention_detailed/{prefix.lower()}_layer_{layer_idx}_fourier_analysis"
+            swanlab.log({
+                swanlab_key: swanlab.Image(fig), 
                 "epoch": step
             })
             
@@ -397,9 +397,9 @@ def log_multi_domain_fourier_comparison(writer, step, all_fourier_data, domain_c
         
         # 记录到TensorBoard和WandB
         writer.add_figure(f'Multi_Domain_Fourier_Comparison/Layer_{layer_idx}', fig, step)
-        if wandb.run is not None:
-            wandb.log({
-                f"multi_domain_fourier_comparison/layer_{layer_idx}": wandb.Image(fig),
+        if swanlab.get_run() is not None:
+            swanlab.log({
+                f"multi_domain_fourier_comparison/layer_{layer_idx}": swanlab.Image(fig),
                 "epoch": step
             })
             
@@ -457,9 +457,9 @@ def log_domain_expert_heatmap(writer, step, data, num_shared_experts, domain_map
         plt.tight_layout()
         
         writer.add_figure('Domain_Expert_Routing_Heatmap', fig, global_step=step)
-        if wandb.run is not None:
+        if swanlab.get_run() is not None:
             # Log heatmap with epoch for consistency
-            wandb.log({"Domain_Expert_Routing_Heatmap": wandb.Image(fig), "epoch": step})
+            swanlab.log({"Domain_Expert_Routing_Heatmap": swanlab.Image(fig), "epoch": step})
             
     except Exception as e:
         print(f"Warning: Failed to create domain expert heatmap: {e}")
@@ -548,9 +548,9 @@ def log_tsne_expert_specialization(writer, step, embeddings, labels, domains, nu
         
         plt.tight_layout()
         writer.add_figure('t-SNE_Specialization', fig, global_step=step)
-        if wandb.run is not None:
-            # Log t-SNE plots to wandb with epoch as step for consistency with evaluation metrics
-            wandb.log({"t-SNE_Specialization": wandb.Image(fig), "epoch": step})
+        if swanlab.get_run() is not None:
+            # Log t-SNE plots to SwanLab with epoch as step for consistency with evaluation metrics
+            swanlab.log({"t-SNE_Specialization": swanlab.Image(fig), "epoch": step})
             
     except Exception as e:
         print(f"Warning: Failed to create t-SNE visualization: {e}")
@@ -572,16 +572,13 @@ def main():
     if args.seed is not None:
         set_seed(args.seed)
 
-    # Initialize WandB
-    if args.use_wandb:
-        wandb.init(
-            project=args.wandb_project,
-            name='-'.join(args.use_datasets),
-            config=args
+    # Initialize SwanLab
+    if args.use_swanlab:
+        swanlab.init(
+            project=args.swanlab_project,
+            experiment_name='-'.join(args.use_datasets),
+            config=vars(args)
         )
-        # --- Define custom x-axis for evaluation metrics ---
-        wandb.define_metric("epoch")
-        wandb.define_metric("eval/*", step_metric="epoch")
 
     # --- MoE Integration: Create a unified name for the experiment directory ---
     dataset_name_str = '-'.join(args.use_datasets)
@@ -694,9 +691,9 @@ def main():
         f.write('epoch\tvalid_metrics\ttest_metrics\n')
         
         # 进行评估
-        t_test = evaluate_batched(model, dataset, args, 'test')
         t_valid = evaluate_batched(model, dataset, args, 'valid')
-        
+        t_test = evaluate_batched(model, dataset, args, 'test')
+
         # 获取epoch信息（从权重文件名提取，如果可能的话）
         epoch_num = 'inference'
         if args.state_dict_path and 'epoch=' in args.state_dict_path:
@@ -786,8 +783,8 @@ def main():
             postfix_data['loss'] = f"{BOLD}{BLUE}{loss.item():.4f}{RESET}"
             pbar.set_postfix(postfix_data)
 
-            # --- WandB Integration: Log training metrics ---
-            if args.use_wandb:
+            # --- SwanLab Integration: Log training metrics ---
+            if args.use_swanlab:
                 log_data = {
                     'train/loss': loss.item(),
                     'train/bpr_loss': bpr_loss.item(),
@@ -796,10 +793,10 @@ def main():
                 for k, v_val in moe_loss_dict.items(): # Renamed v to v_val
                     if torch.is_tensor(v_val):
                         log_data[f'train/{k}'] = v_val.item()
-                # Calculate global step for wandb
-                wandb_global_step = (epoch - 1) * len(train_loader) + step
-                wandb.log(log_data, step=wandb_global_step)
-            # --- End WandB Integration ---
+                # Calculate global step for SwanLab
+                swanlab_global_step = (epoch - 1) * len(train_loader) + step
+                swanlab.log(log_data, step=swanlab_global_step)
+            # --- End SwanLab Integration ---
             
             # --- Visualization Logging ---
             if args.visualize:
@@ -825,8 +822,8 @@ def main():
                         # 在旧策略下，使用通用标签
                         scalar_dict = {f'Load/Expert_{i}': val.item() for i, val in enumerate(expert_load)}
                     writer.add_scalars('Expert_Load_Distribution', scalar_dict, global_step)
-                    if args.use_wandb:
-                        wandb.log({f'train_expert_load/Domain_{domain_map[i]}' if args.moe_routing_strategy == 'shared_base' else f'train_expert_load/Expert_{i}': val.item() for i, val in enumerate(expert_load)}, step=global_step)
+                    if args.use_swanlab:
+                        swanlab.log({f'train_expert_load/Domain_{domain_map[i]}' if args.moe_routing_strategy == 'shared_base' else f'train_expert_load/Expert_{i}': val.item() for i, val in enumerate(expert_load)}, step=global_step)
 
         if args.visualize and epoch % args.tsne_log_freq == 0:
              # Log t-SNE plot at the end of the epoch
@@ -882,8 +879,8 @@ def main():
             model.eval()
             t1 = time.time() - t0
             T += t1
-            t_test = evaluate_batched(model, dataset, args, 'test')
             t_valid = evaluate_batched(model, dataset, args, 'valid')
+            t_test = evaluate_batched(model, dataset, args, 'test')
             print('epoch:%d, time: %f(s)' % (epoch, T))
 
             def pretty_print_metrics(metrics_dict, title, color_code):
@@ -917,8 +914,8 @@ def main():
             pretty_print_metrics(t_valid, "Full Valid Metrics", GREEN)
             pretty_print_metrics(t_test, "Full Test Metrics", CYAN)
 
-            # --- WandB Integration: Log validation and test metrics against epoch ---
-            if args.use_wandb:
+            # --- SwanLab Integration: Log validation and test metrics against epoch ---
+            if args.use_swanlab:
                 eval_log_dict = {"epoch": epoch}
                 # Consolidate all validation and test metrics into a single dictionary
                 for key, value in t_valid.items():
@@ -929,8 +926,8 @@ def main():
                     eval_log_dict[metric_name] = value
                 
                 # Log all evaluation metrics at once against the 'epoch' step
-                wandb.log(eval_log_dict)
-            # --- End WandB Integration ---
+                swanlab.log(eval_log_dict)
+            # --- End SwanLab Integration ---
 
             # Using NDCG@10 for model saving criteria
             if t_valid['overall_NDCG@10'] > best_val_ndcg or t_valid['overall_HT@10'] > best_val_hr:
@@ -943,10 +940,10 @@ def main():
                 fname = fname.format(epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
                 model_path = os.path.join(folder, fname)
                 torch.save(model.state_dict(), model_path)
-                # --- WandB Integration: Save model artifact ---
-                # if args.use_wandb:
-                #     wandb.save(model_path)
-                # --- End WandB Integration ---
+                # --- SwanLab Integration: Save model artifact ---
+                # if args.use_swanlab:
+                #     swanlab.save(model_path)
+                # --- End SwanLab Integration ---
 
             # Format the metrics string for log file
             valid_metrics_str = ",".join([f"{k}:{v:.4f}" for k, v in sorted(t_valid.items())])
@@ -965,10 +962,10 @@ def main():
     f.close()
     if writer is not None:
         writer.close()
-    # --- WandB Integration ---
-    if args.use_wandb:
-        wandb.finish()
-    # --- End WandB Integration ---
+    # --- SwanLab Integration ---
+    if args.use_swanlab:
+        swanlab.finish()
+    # --- End SwanLab Integration ---
     # sampler.close() # The new sampler does not need to be closed.
     print("Done")
 
