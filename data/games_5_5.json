@@ -1,0 +1,31 @@
+{
+  "dataset_info": {
+    "name": "games",
+    "processed_time": "2025-07-21T21:50:34.921280",
+    "output_file": "data/games_5_5.txt"
+  },
+  "basic_stats": {
+    "num_users": 15264,
+    "num_items": 7676,
+    "num_interactions": 147861,
+    "sparsity": 0.9987380262666287,
+    "sparsity_percent": 99.87380262666287,
+    "avg_sequence_length": 9.68691037735849,
+    "rating_range": {
+      "min": 1,
+      "max": 5
+    }
+  },
+  "sequence_length_distribution": {
+    "min": 5,
+    "max": 693,
+    "median": 7.0,
+    "std": 13.20963958798777
+  },
+  "item_popularity_distribution": {
+    "min": 5,
+    "max": 565,
+    "mean": 19.262767066180302,
+    "median": 10.0
+  }
+}

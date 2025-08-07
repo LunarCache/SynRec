@@ -1,0 +1,31 @@
+{
+  "dataset_info": {
+    "name": "beauty",
+    "processed_time": "2025-07-21T21:50:16.176326",
+    "output_file": "data/beauty_5_5.txt"
+  },
+  "basic_stats": {
+    "num_users": 22332,
+    "num_items": 12086,
+    "num_interactions": 198215,
+    "sparsity": 0.9992656107556126,
+    "sparsity_percent": 99.92656107556127,
+    "avg_sequence_length": 8.875828407666129,
+    "rating_range": {
+      "min": 1,
+      "max": 5
+    }
+  },
+  "sequence_length_distribution": {
+    "min": 5,
+    "max": 204,
+    "median": 6.0,
+    "std": 8.163444646554298
+  },
+  "item_popularity_distribution": {
+    "min": 5,
+    "max": 431,
+    "mean": 16.40038060565944,
+    "median": 9.0
+  }
+}
