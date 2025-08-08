@@ -237,8 +237,8 @@ def test_domain_adaptive_rating():
                 self.use_adaptive_rating_config = True
                 self.rating_strategy = 'fourier'
                 self.rating_num_frequencies = 12
-                self.rating_short_term_heads = 1
-                self.rating_long_term_heads = 1
+                self.rating_branch1_heads = 1
+                self.rating_branch2_heads = 1
                 self.maxlen = 100
         
         args = MockArgs()

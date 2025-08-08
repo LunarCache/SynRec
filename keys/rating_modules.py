@@ -10,14 +10,14 @@ class FourierRatingEncoder(nn.Module):
     基于傅里叶变换的多尺度Rating建模
     
     创新点：
-    1. 使用FFT分解rating序列为不同频率成分
-    2. 低频建模长期趋势，高频建模短期模式  
-    3. 多头注意力分别处理不同时间尺度
-    4. 自适应融合机制整合多尺度信息
+    1. 使用FFT提取rating序列的频域特征
+    2. 双分支注意力机制自适应学习不同时间尺度模式
+    3. 自适应融合机制整合多尺度信息
+    4. 不预设短期/长期标签，让模型自主学习分化
     """
     
     def __init__(self, hidden_units, max_len=100, num_frequencies=16, 
-                 short_term_heads=4, long_term_heads=2, dropout_rate=0.1):
+                 branch1_heads=4, branch2_heads=2, dropout_rate=0.1):
         super(FourierRatingEncoder, self).__init__()
         self.hidden_units = hidden_units
         self.num_frequencies = num_frequencies
@@ -35,16 +35,16 @@ class FourierRatingEncoder(nn.Module):
         )
         
         # 多尺度注意力机制
-        self.short_term_attn = nn.MultiheadAttention(
-            hidden_units, num_heads=short_term_heads, dropout=dropout_rate, batch_first=True
+        self.attention_branch1 = nn.MultiheadAttention(
+            hidden_units, num_heads=branch1_heads, dropout=dropout_rate, batch_first=True
         )
-        self.long_term_attn = nn.MultiheadAttention(
-            hidden_units, num_heads=long_term_heads, dropout=dropout_rate, batch_first=True
+        self.attention_branch2 = nn.MultiheadAttention(
+            hidden_units, num_heads=branch2_heads, dropout=dropout_rate, batch_first=True
         )
         
         # 时间尺度融合网络
         self.scale_fusion = nn.Sequential(
-            nn.Linear(hidden_units * 3, hidden_units * 2),  # 原始+短期+长期
+            nn.Linear(hidden_units * 3, hidden_units * 2),  # 原始+分支1+分支2
             nn.GELU(),
             nn.Dropout(dropout_rate),
             nn.Linear(hidden_units * 2, hidden_units),
@@ -65,7 +65,7 @@ class FourierRatingEncoder(nn.Module):
             rating_seq: (batch_size, seq_len) - rating序列
         Returns:
             enhanced_rating_repr: (batch_size, seq_len, hidden_units)
-            attention_weights: dict - 包含短期和长期注意力权重用于可视化
+            attention_weights: dict - 包含分支1和分支2注意力权重用于可视化
         """
         batch_size, seq_len = rating_seq.shape
         
@@ -76,20 +76,20 @@ class FourierRatingEncoder(nn.Module):
         freq_features = self._fourier_decomposition(rating_seq)  # (batch, seq, hidden)
         
         # 3. 多尺度注意力建模
-        # 短期模式（高频成分）
-        short_term_context, short_term_attn_weights = self.short_term_attn(
+        # 注意力分支1（4个头 - 可能学习细粒度模式）
+        branch1_context, branch1_attn_weights = self.attention_branch1(
             freq_features, freq_features, freq_features
         )
         
-        # 长期趋势（低频成分）
-        long_term_context, long_term_attn_weights = self.long_term_attn(
+        # 注意力分支2（2个头 - 可能学习粗粒度模式）
+        branch2_context, branch2_attn_weights = self.attention_branch2(
             freq_features, freq_features, freq_features  
         )
         
         # 4. 多尺度信息融合
-        # 拼接原始、短期、长期特征
+        # 拼接原始、分支1、分支2特征
         multi_scale_features = torch.cat([
-            rating_emb, short_term_context, long_term_context
+            rating_emb, branch1_context, branch2_context
         ], dim=-1)
         
         fused_features = self.scale_fusion(multi_scale_features)
@@ -99,15 +99,17 @@ class FourierRatingEncoder(nn.Module):
         
         final_repr = (
             adaptive_weights[..., 0:1] * rating_emb +
-            adaptive_weights[..., 1:2] * short_term_context +
-            adaptive_weights[..., 2:3] * long_term_context
+            adaptive_weights[..., 1:2] * branch1_context +  # 分支1权重
+            adaptive_weights[..., 2:3] * branch2_context     # 分支2权重
         )
         
         # 6. 收集注意力权重用于可视化
         attention_weights = {
-            'short_term_attention': short_term_attn_weights,  # (batch, heads, seq, seq)
-            'long_term_attention': long_term_attn_weights,    # (batch, heads, seq, seq)
-            'adaptive_weights': adaptive_weights              # (batch, seq, 3)
+            'attention_branch_1': branch1_attn_weights,     # (batch, heads, seq, seq) - 第一个注意力分支
+            'attention_branch_2': branch2_attn_weights,     # (batch, heads, seq, seq) - 第二个注意力分支  
+            'adaptive_weights': adaptive_weights,           # (batch, seq, 3) - 自适应融合权重
+            'branch_1_heads': self.attention_branch1.num_heads,  # 第一个分支的头数
+            'branch_2_heads': self.attention_branch2.num_heads   # 第二个分支的头数
         }
         
         return final_repr, attention_weights
@@ -197,8 +199,8 @@ class EnhancedRatingModule(nn.Module):
             self.domain_encoders[str(domain_id)] = FourierRatingEncoder(
                 hidden_units,
                 num_frequencies=config['num_frequencies'],
-                short_term_heads=config['short_term_heads'],
-                long_term_heads=config['long_term_heads'],
+                branch1_heads=config['branch1_heads'],
+                branch2_heads=config['branch2_heads'],
                 max_len=config['max_len'],
                 dropout_rate=dropout_rate
             )
@@ -209,7 +211,7 @@ class EnhancedRatingModule(nn.Module):
         for domain_id, dataset_name in enumerate(self.dataset_names):
             config = self.domain_configs[dataset_name]
             print(f"   Domain {domain_id} ({dataset_name}): "
-                  f"{config['num_frequencies']}freq + {config['short_term_heads']}+{config['long_term_heads']}heads")
+                  f"{config['num_frequencies']}freq + {config['branch1_heads']}+{config['branch2_heads']}heads")
     
     def _load_domain_configs(self, args):
         """加载每个领域的专门配置"""
@@ -217,8 +219,8 @@ class EnhancedRatingModule(nn.Module):
             # 默认单领域配置
             return ['default'], {'default': {
                 'num_frequencies': 12,
-                'short_term_heads': 1,
-                'long_term_heads': 1,
+                'branch1_heads': 1,
+                'branch2_heads': 1,
                 'max_len': 50
             }}
         
@@ -249,8 +251,8 @@ class EnhancedRatingModule(nn.Module):
             # 所有领域使用相同的手动配置
             manual_config = {
                 'num_frequencies': getattr(args, 'rating_num_frequencies', 12),
-                'short_term_heads': getattr(args, 'rating_short_term_heads', 1),
-                'long_term_heads': getattr(args, 'rating_long_term_heads', 1),
+                'branch1_heads': getattr(args, 'rating_branch1_heads', 1),
+                'branch2_heads': getattr(args, 'rating_branch2_heads', 1),
                 'max_len': getattr(args, 'maxlen', 100)
             }
             

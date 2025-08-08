@@ -108,10 +108,10 @@ def parse_args():
     # 手动配置参数（当策略为fourier且自适应配置关闭时使用）
     parser.add_argument('--rating_num_frequencies', default=12, type=int, 
                        help='Number of frequency components for Fourier rating encoding (used when adaptive config disabled)')
-    parser.add_argument('--rating_short_term_heads', default=1, type=int,
-                       help='Number of attention heads for short-term rating patterns (used when adaptive config disabled)')
-    parser.add_argument('--rating_long_term_heads', default=1, type=int,
-                       help='Number of attention heads for long-term rating trends (used when adaptive config disabled)')
+    parser.add_argument('--rating_branch1_heads', default=1, type=int,
+                       help='Number of attention heads for rating branch 1 (used when adaptive config disabled)')
+    parser.add_argument('--rating_branch2_heads', default=1, type=int,
+                       help='Number of attention heads for rating branch 2 (used when adaptive config disabled)')
     # --- End Enhanced Rating Module Parameters ---
     parser.add_argument('--moe_num_experts', default=4, type=int, help='Number of experts in MoE')
     parser.add_argument('--moe_k', default=2, type=int, help='Number of experts to use for each token')
@@ -136,7 +136,7 @@ def parse_args():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for data loading.')
     # --- End MoE Integration ---
     # --- SwanLab Integration ---
-    parser.add_argument('--swanlab_project', type=str, default='CMREC', help='SwanLab project name')
+    parser.add_argument('--swanlab_project', type=str, default='HAGMRec', help='SwanLab project name')
     parser.add_argument('--use_swanlab', default=True, type=str2bool, help='Enable/Disable SwanLab')
     # --- End SwanLab Integration ---
     args = parser.parse_args()
@@ -172,11 +172,11 @@ def log_fourier_rating_detailed_heatmap(writer, step, fourier_attention_data, la
                     continue
                     
                 # 提取attention组件
-                short_term_attn = fourier_attention_dict.get('short_term_attention')
-                long_term_attn = fourier_attention_dict.get('long_term_attention')
+                branch1_attn = fourier_attention_dict.get('attention_branch_1')
+                branch2_attn = fourier_attention_dict.get('attention_branch_2')
                 adaptive_weights = fourier_attention_dict.get('adaptive_weights')
                 
-                if short_term_attn is None or long_term_attn is None:
+                if branch1_attn is None or branch2_attn is None:
                     continue
                 
                 # 🎯 获取领域特定配置
@@ -189,16 +189,16 @@ def log_fourier_rating_detailed_heatmap(writer, step, fourier_attention_data, la
                 
                 # 处理这个领域的attention数据
                 _log_single_domain_fourier_attention(
-                    writer, step, short_term_attn, long_term_attn, adaptive_weights,
+                    writer, step, branch1_attn, branch2_attn, adaptive_weights,
                     layer_idx, f"{prefix}_Domain{domain_id}", domain_config, domain_name, domain_config_manager
                 )
         else:
             # 单领域格式：直接包含attention数据的dict
-            short_term_attn = fourier_attention_data.get('short_term_attention')
-            long_term_attn = fourier_attention_data.get('long_term_attention')
+            branch1_attn = fourier_attention_data.get('attention_branch_1')
+            branch2_attn = fourier_attention_data.get('attention_branch_2')
             adaptive_weights = fourier_attention_data.get('adaptive_weights')
             
-            if short_term_attn is not None and long_term_attn is not None:
+            if branch1_attn is not None and branch2_attn is not None:
                 # 🎯 单领域情况下的配置处理
                 domain_config = None
                 domain_name = None
@@ -210,33 +210,33 @@ def log_fourier_rating_detailed_heatmap(writer, step, fourier_attention_data, la
                     domain_name = dataset_name
                 
                 _log_single_domain_fourier_attention(
-                    writer, step, short_term_attn, long_term_attn, adaptive_weights,
+                    writer, step, branch1_attn, branch2_attn, adaptive_weights,
                     layer_idx, prefix, domain_config, domain_name, domain_config_manager
                 )
 
-def _log_single_domain_fourier_attention(writer, step, short_term_attn, long_term_attn, adaptive_weights, layer_idx, prefix, domain_config=None, domain_name=None, domain_config_manager=None):
+def _log_single_domain_fourier_attention(writer, step, branch1_attn, branch2_attn, adaptive_weights, layer_idx, prefix, domain_config=None, domain_name=None, domain_config_manager=None):
     """Helper function to log attention data for a single domain with adaptive sizing"""
     # Convert to numpy and handle attention weight dimensions
-    short_term_np = short_term_attn.detach().cpu().numpy()
-    long_term_np = long_term_attn.detach().cpu().numpy()
+    branch1_np = branch1_attn.detach().cpu().numpy()
+    branch2_np = branch2_attn.detach().cpu().numpy()
     
     # Handle different dimensionalities
-    if short_term_np.ndim == 4:  # (batch, heads, seq, seq)
-        short_term_np = short_term_np.mean(axis=(0, 1))  # Average over batch and heads
-    elif short_term_np.ndim == 3:  # (batch, seq, seq) - already averaged over heads
-        short_term_np = short_term_np.mean(axis=0)  # Average over batch
-    elif short_term_np.ndim == 2:  # (seq, seq) - single sample
+    if branch1_np.ndim == 4:  # (batch, heads, seq, seq)
+        branch1_np = branch1_np.mean(axis=(0, 1))  # Average over batch and heads
+    elif branch1_np.ndim == 3:  # (batch, seq, seq) - already averaged over heads
+        branch1_np = branch1_np.mean(axis=0)  # Average over batch
+    elif branch1_np.ndim == 2:  # (seq, seq) - single sample
         pass  # Use as is
     
-    if long_term_np.ndim == 4:  # (batch, heads, seq, seq)
-        long_term_np = long_term_np.mean(axis=(0, 1))  # Average over batch and heads
-    elif long_term_np.ndim == 3:  # (batch, seq, seq) - already averaged over heads
-        long_term_np = long_term_np.mean(axis=0)  # Average over batch
-    elif long_term_np.ndim == 2:  # (seq, seq) - single sample
+    if branch2_np.ndim == 4:  # (batch, heads, seq, seq)
+        branch2_np = branch2_np.mean(axis=(0, 1))  # Average over batch and heads
+    elif branch2_np.ndim == 3:  # (batch, seq, seq) - already averaged over heads
+        branch2_np = branch2_np.mean(axis=0)  # Average over batch
+    elif branch2_np.ndim == 2:  # (seq, seq) - single sample
         pass  # Use as is
     
     #  Domain-aware adaptive sizing based on DomainAdaptiveConfig
-    original_len = short_term_np.shape[0]
+    original_len = branch1_np.shape[0]
     if domain_config and 'max_len' in domain_config:
         effective_len = min(domain_config['max_len'], original_len)
         # 获取规范的显示名称
@@ -253,8 +253,8 @@ def _log_single_domain_fourier_attention(writer, step, short_term_attn, long_ter
         # adaptive_info = f" (Default: {effective_len}x{effective_len})"
     
     # Crop attention matrices to effective region
-    short_term_np = short_term_np[:effective_len, :effective_len]
-    long_term_np = long_term_np[:effective_len, :effective_len]
+    branch1_np = branch1_np[:effective_len, :effective_len]
+    branch2_np = branch2_np[:effective_len, :effective_len]
     
     # Create adaptive figure size based on effective length
     base_size = max(4, effective_len * 0.12)  # 根据有效长度动态调整基础尺寸
@@ -263,16 +263,16 @@ def _log_single_domain_fourier_attention(writer, step, short_term_attn, long_ter
     fig, axes = plt.subplots(1, 3, figsize=(fig_width, fig_height))
     
     try:
-        # Plot 1: Short-term attention (high-frequency patterns)
-        im1 = axes[0].imshow(short_term_np, cmap='Reds', aspect='auto')
-        axes[0].set_title(f'Short-term Rating Attention{domain_info}\n(High-frequency Patterns)')
+        # Plot 1: Attention Branch 1 
+        im1 = axes[0].imshow(branch1_np, cmap='Reds', aspect='auto')
+        axes[0].set_title(f'Rating Attention Branch 1{domain_info}\n(Fine-grained Patterns)')
         axes[0].set_xlabel('Rating Sequence Position (Key)')
         axes[0].set_ylabel('Rating Sequence Position (Query)')
         plt.colorbar(im1, ax=axes[0])
         
-        # Plot 2: Long-term attention (low-frequency trends)
-        im2 = axes[1].imshow(long_term_np, cmap='Blues', aspect='auto')
-        axes[1].set_title(f'Long-term Rating Attention{domain_info}\n(Low-frequency Trends)')
+        # Plot 2: Attention Branch 2 
+        im2 = axes[1].imshow(branch2_np, cmap='Blues', aspect='auto')
+        axes[1].set_title(f'Rating Attention Branch 2{domain_info}\n(Coarse-grained Patterns)')
         axes[1].set_xlabel('Rating Sequence Position (Key)')
         axes[1].set_ylabel('Rating Sequence Position (Query)')
         plt.colorbar(im2, ax=axes[1])
@@ -283,11 +283,11 @@ def _log_single_domain_fourier_attention(writer, step, short_term_attn, long_ter
             # 也需要裁剪adaptive weights到有效长度
             adaptive_np = adaptive_np[:effective_len, :]
             im3 = axes[2].imshow(adaptive_np.T, cmap='Greens', aspect='auto')
-            axes[2].set_title(f'Adaptive Scale Weights{domain_info}\n(Original, Short-term, Long-term)')
+            axes[2].set_title(f'Adaptive Scale Weights{domain_info}\n(Original, Branch1, Branch2)')
             axes[2].set_xlabel('Rating Sequence Position')
-            axes[2].set_ylabel('Scale Type (0:Original, 1:Short, 2:Long)')
+            axes[2].set_ylabel('Scale Type (0:Original, 1:Branch1, 2:Branch2)')
             axes[2].set_yticks([0, 1, 2])
-            axes[2].set_yticklabels(['Original', 'Short-term', 'Long-term'])
+            axes[2].set_yticklabels(['Original', 'Branch1', 'Branch2'])
             plt.colorbar(im3, ax=axes[2])
         else:
             axes[2].text(0.5, 0.5, 'Adaptive Weights\nNot Available', 
@@ -357,35 +357,35 @@ def log_multi_domain_fourier_comparison(writer, step, all_fourier_data, domain_c
             display_name = domain_config_manager.get_display_name(dataset_name) if domain_config_manager else dataset_name
             
             # 获取attention数据
-            short_term_attn = fourier_dict.get('short_term_attention')
-            long_term_attn = fourier_dict.get('long_term_attention')
+            branch1_attn = fourier_dict.get('attention_branch_1')
+            branch2_attn = fourier_dict.get('attention_branch_2')
             
-            if short_term_attn is None or long_term_attn is None:
+            if branch1_attn is None or branch2_attn is None:
                 continue
             
             # 处理维度并裁剪到有效长度
-            short_term_np = short_term_attn.detach().cpu().numpy()
-            long_term_np = long_term_attn.detach().cpu().numpy()
+            branch1_np = branch1_attn.detach().cpu().numpy()
+            branch2_np = branch2_attn.detach().cpu().numpy()
             
-            if short_term_np.ndim > 2:
-                short_term_np = short_term_np.mean(axis=tuple(range(short_term_np.ndim - 2)))
-            if long_term_np.ndim > 2:
-                long_term_np = long_term_np.mean(axis=tuple(range(long_term_np.ndim - 2)))
+            if branch1_np.ndim > 2:
+                branch1_np = branch1_np.mean(axis=tuple(range(branch1_np.ndim - 2)))
+            if branch2_np.ndim > 2:
+                branch2_np = branch2_np.mean(axis=tuple(range(branch2_np.ndim - 2)))
             
             # 裁剪到有效区域
-            short_term_np = short_term_np[:effective_len, :effective_len]
-            long_term_np = long_term_np[:effective_len, :effective_len]
+            branch1_np = branch1_np[:effective_len, :effective_len]
+            branch2_np = branch2_np[:effective_len, :effective_len]
             
-            # 绘制短期attention
-            im1 = axes[0, col].imshow(short_term_np, cmap='Reds', aspect='auto')
-            axes[0, col].set_title(f'{display_name}\nShort-term ({effective_len}x{effective_len})')
+            # 绘制分支1 attention
+            im1 = axes[0, col].imshow(branch1_np, cmap='Reds', aspect='auto')
+            axes[0, col].set_title(f'{display_name}\nBranch1 ({effective_len}x{effective_len})')
             axes[0, col].set_xlabel('Position')
             axes[0, col].set_ylabel('Position')
             plt.colorbar(im1, ax=axes[0, col])
             
-            # 绘制长期attention
-            im2 = axes[1, col].imshow(long_term_np, cmap='Blues', aspect='auto')
-            axes[1, col].set_title(f'{display_name}\nLong-term ({effective_len}x{effective_len})')
+            # 绘制分支2 attention
+            im2 = axes[1, col].imshow(branch2_np, cmap='Blues', aspect='auto')
+            axes[1, col].set_title(f'{display_name}\nBranch2 ({effective_len}x{effective_len})')
             axes[1, col].set_xlabel('Position')
             axes[1, col].set_ylabel('Position')
             plt.colorbar(im2, ax=axes[1, col])

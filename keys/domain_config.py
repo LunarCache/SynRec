@@ -26,32 +26,32 @@ class DomainAdaptiveConfig:
     DOMAIN_CONFIGS = {
         'beauty_5_5': {
             'num_frequencies': 8,        # 简单序列，低频需求
-            'short_term_heads': 1,       # 最小头数
-            'long_term_heads': 1,        # 最小头数
+            'branch1_heads': 1,       # 最小头数
+            'branch2_heads': 1,        # 最小头数
             'max_len': 15,               # 基于数据统计的合理长度
             'description': 'Beauty domain: Short sequences, simple patterns'
         },
         'games_5_5': {
             'num_frequencies': 12,       # 中等复杂度
-            'short_term_heads': 1,       # 保持高效
-            'long_term_heads': 1,        # 保持高效
+            'branch1_heads': 1,       # 保持高效
+            'branch2_heads': 1,        # 保持高效
             'max_len': 25,               # 适中的序列长度
             'description': 'Games domain: Medium sequences, moderate complexity'
         },
         'ml-1m_5_5': {
             'num_frequencies': 16,       # 复杂序列，更多频率成分
-            'short_term_heads': 2,       # 仅略微增加
-            'long_term_heads': 1,        # 控制计算开销
+            'branch1_heads': 2,       # 仅略微增加
+            'branch2_heads': 1,        # 控制计算开销
             'max_len': 50,              # 长序列支持
             'description': 'MovieLens domain: Long sequences, complex patterns'
         }
-    }
+    }   
     
     # 默认配置（未知数据集的安全配置）
     DEFAULT_CONFIG = {
         'num_frequencies': 12,
-        'short_term_heads': 1,
-        'long_term_heads': 1,
+        'branch1_heads': 1,
+        'branch2_heads': 1,
         'max_len': 50,
         'description': 'Default safe configuration'
     }
@@ -122,8 +122,8 @@ class DomainAdaptiveConfig:
         # 计算平衡配置（倾向于复杂度较高的配置以保证所有领域的效果）
         balanced_config = {
             'num_frequencies': max(config['num_frequencies'] for config in configs),
-            'short_term_heads': max(config['short_term_heads'] for config in configs),
-            'long_term_heads': max(config['long_term_heads'] for config in configs),
+            'branch1_heads': max(config['branch1_heads'] for config in configs),
+            'branch2_heads': max(config['branch2_heads'] for config in configs),
             'max_len': max(config['max_len'] for config in configs),
             'description': f'Balanced config for: {", ".join(dataset_names)}'
         }
@@ -158,20 +158,20 @@ class DomainAdaptiveConfig:
         if avg_seq_len < 15:
             # 短序列：简单配置
             num_frequencies = 8
-            short_term_heads = 1
-            long_term_heads = 1
+            branch1_heads = 1
+            branch2_heads = 1
             max_len = int(avg_seq_len * 2)
         elif avg_seq_len < 50:
             # 中等序列：平衡配置
             num_frequencies = 12
-            short_term_heads = 1
-            long_term_heads = 1
+            branch1_heads = 1
+            branch2_heads = 1
             max_len = int(avg_seq_len * 1.5)
         else:
             # 长序列：复杂配置（但控制头数）
             num_frequencies = 16
-            short_term_heads = 2
-            long_term_heads = 1
+            branch1_heads = 2
+            branch2_heads = 1
             max_len = min(int(avg_seq_len * 1.2), 300)  # 限制最大长度
         
         # 根据序列变化程度微调
@@ -181,8 +181,8 @@ class DomainAdaptiveConfig:
         
         return {
             'num_frequencies': num_frequencies,
-            'short_term_heads': short_term_heads,
-            'long_term_heads': long_term_heads,
+            'branch1_heads': branch1_heads,
+            'branch2_heads': branch2_heads,
             'max_len': max_len
         }
     
@@ -195,16 +195,16 @@ class DomainAdaptiveConfig:
         print(f"Datasets: {', '.join(dataset_names)}")
         print(f"Description: {config.get('description', 'N/A')}")
         print(f"Frequency components: {config['num_frequencies']}")
-        print(f"Short-term attention heads: {config['short_term_heads']}")
-        print(f"Long-term attention heads: {config['long_term_heads']}")
+        print(f"branch1_heads attention heads: {config['branch1_heads']}")
+        print(f"branch2_heads attention heads: {config['branch2_heads']}")
         print(f"Max sequence length: {config['max_len']}")
         
         # 计算相对于默认配置的计算开销
         default = self.DEFAULT_CONFIG
         compute_ratio = (
             (config['num_frequencies'] / default['num_frequencies']) *
-            ((config['short_term_heads'] + config['long_term_heads']) / 
-             (default['short_term_heads'] + default['long_term_heads']))
+            ((config['branch1_heads'] + config['branch2_heads']) / 
+             (default['branch1_heads'] + default['branch2_heads']))
         )
         
         print(f"Relative compute cost: {compute_ratio:.2f}x")
