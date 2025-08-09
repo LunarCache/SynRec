@@ -18,6 +18,25 @@ from sklearn.manifold import TSNE
 import numpy as np
 from collections import OrderedDict, defaultdict
 
+# Import enhanced visualization modules
+try:
+    from visualization import (
+        VisualizationConfig,
+        EnhancedVisualization,
+        plot_fourier_attention_journal,
+        plot_expert_routing_journal,
+        plot_tsne_specialization_journal,
+        export_figure_journal,
+        create_journal_config,
+        apply_journal_style
+    )
+    ENHANCED_VIZ_AVAILABLE = True
+    print("✓ Enhanced visualization modules loaded successfully")
+except ImportError as e:
+    ENHANCED_VIZ_AVAILABLE = False
+    print(f"⚠ Enhanced visualization not available: {e}")
+    print("  Falling back to original visualization functions")
+
 # ANSI color codes for terminal output
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -27,6 +46,263 @@ YELLOW = "\033[93m"
 BLUE = "\033[94m"
 MAGENTA = "\033[95m"
 CYAN = "\033[96m"
+
+def setup_enhanced_visualization(args):
+    """设置增强可视化系统"""
+    if not ENHANCED_VIZ_AVAILABLE:
+        return None
+    
+    try:
+        # 创建期刊特定的配置
+        config = create_journal_config(args.journal_style)
+        config.dpi = args.viz_dpi
+        config.figure_format = args.viz_format
+        config.save_formats = [args.viz_format, 'png'] if args.save_publication_figs else [args.viz_format]
+        config.output_directory = os.path.join('exp', args.train_dir, 'enhanced_figures')
+        
+        # 应用期刊样式
+        apply_journal_style(args.journal_style)
+        
+        print(f"✓ Enhanced visualization configured for {args.journal_style} journal style")
+        print(f"  DPI: {config.dpi}, Format: {config.figure_format}")
+        print(f"  Output: {config.output_directory}")
+        
+        return config
+    except Exception as e:
+        print(f"⚠ Failed to setup enhanced visualization: {e}")
+        return None
+
+def log_enhanced_expert_routing(writer, step, data, domain_map, strategy, args, viz_config=None):
+    """增强的专家路由可视化"""
+    if not ENHANCED_VIZ_AVAILABLE or viz_config is None:
+        # 回退到原始函数
+        return log_domain_expert_heatmap(writer, step, data, len(data[0]), domain_map, strategy)
+    
+    try:
+        # 准备标签
+        domain_labels = []
+        for i in range(len(data)):
+            raw_dataset_name = domain_map.get(i, f"Unknown Domain {i}")
+            # 规范化领域名称
+            if not raw_dataset_name.startswith("Unknown Domain"):
+                try:
+                    from visualization.enhanced_plots import _normalize_domain_name
+                    normalized_name = _normalize_domain_name(raw_dataset_name)
+                    domain_labels.append(normalized_name)
+                except ImportError:
+                    domain_labels.append(raw_dataset_name)
+            else:
+                domain_labels.append(raw_dataset_name)
+        
+        if strategy == 'shared_base':
+            expert_labels = [f"Expert {i}" for i in range(len(data[0]))]
+        else:
+            num_shared = 1 if len(data[0]) > len(domain_map) else 0
+            expert_labels = []
+            for i in range(len(data[0])):
+                if i < num_shared:
+                    expert_labels.append(f"Shared Expert {i}")
+                else:
+                    expert_labels.append(f"Domain Expert {i-num_shared}")
+        
+        # 使用增强可视化
+        fig, saved_files = plot_expert_routing_journal(
+            data, domain_labels, expert_labels, step, viz_config, save_plots=args.save_publication_figs
+        )
+        
+        # 记录到TensorBoard
+        writer.add_figure('Enhanced_Domain_Expert_Routing', fig, step)
+        
+        # 记录到SwanLab
+        if swanlab.get_run() is not None:
+            swanlab.log({
+                f"enhanced_expert_routing/heatmap": swanlab.Image(fig),
+                f"enhanced_expert_routing/epoch": step
+            }, step=step)
+        
+        plt.close(fig)
+        
+        if saved_files:
+            print(f"  Enhanced expert routing saved: {len(saved_files)} files")
+            
+    except Exception as e:
+        print(f"⚠ Enhanced expert routing failed: {e}, using fallback")
+        log_domain_expert_heatmap(writer, step, data, len(data[0]), domain_map, strategy)
+
+def log_enhanced_tsne_specialization(writer, step, embeddings, labels, domains, domain_map, args, viz_config=None):
+    """增强的t-SNE专业化可视化"""
+    if not ENHANCED_VIZ_AVAILABLE or viz_config is None:
+        # 回退到原始函数
+        return log_tsne_expert_specialization(writer, step, embeddings, labels, domains, 
+                                            len(domain_map), domain_map, args)
+    
+    try:
+        # 使用增强可视化
+        fig, saved_files = plot_tsne_specialization_journal(
+            embeddings, labels, domains, domain_map, step, viz_config, 
+            save_plots=args.save_publication_figs,
+            tsne_params={'perplexity': min(30, len(embeddings)//4)}
+        )
+        
+        # 记录到TensorBoard
+        writer.add_figure('Enhanced_t-SNE_Specialization', fig, step)
+        
+        # 记录到SwanLab
+        if swanlab.get_run() is not None:
+            swanlab.log({
+                f"enhanced_tsne_specialization/plot": swanlab.Image(fig),
+                f"enhanced_tsne_specialization/epoch": step
+            }, step=step)
+        
+        plt.close(fig)
+        
+        if saved_files:
+            print(f"  Enhanced t-SNE specialization saved: {len(saved_files)} files")
+            
+    except Exception as e:
+        print(f"⚠ Enhanced t-SNE failed: {e}, using fallback")
+        log_tsne_expert_specialization(writer, step, embeddings, labels, domains, 
+                                     len(domain_map), domain_map, args)
+
+def log_enhanced_fourier_attention(writer, step, fourier_attention_data, layer_idx, 
+                                   domain_config_manager, domain_map, args, viz_config=None):
+    """增强的Fourier注意力可视化"""
+    if not ENHANCED_VIZ_AVAILABLE or viz_config is None:
+        # 回退到原始函数
+        return log_fourier_rating_detailed_heatmap(
+            writer, step, fourier_attention_data, layer_idx,
+            domain_config_manager=domain_config_manager, domain_map=domain_map
+        )
+    
+    if not fourier_attention_data:
+        return
+    
+    try:
+        if isinstance(fourier_attention_data, dict):
+            keys = list(fourier_attention_data.keys())
+            if keys and isinstance(keys[0], (int, str)) and str(keys[0]).isdigit():
+                # 多领域格式：{domain_id: attention_dict}
+                for domain_id, fourier_attention_dict in fourier_attention_data.items():
+                    if fourier_attention_dict is None:
+                        continue
+                    
+                    # 提取attention组件
+                    branch1_attn = fourier_attention_dict.get('attention_branch_1')
+                    branch2_attn = fourier_attention_dict.get('attention_branch_2')
+                    adaptive_weights = fourier_attention_dict.get('adaptive_weights')
+                    
+                    if branch1_attn is None or branch2_attn is None:
+                        continue
+                    
+                    # 获取领域配置信息
+                    domain_info = {}
+                    if domain_config_manager and domain_map and domain_id in domain_map:
+                        dataset_name = domain_map[domain_id]
+                        domain_config = domain_config_manager.get_domain_config([dataset_name])
+                        domain_info = {
+                            'display_name': domain_config_manager.get_display_name(dataset_name),
+                            'effective_length': domain_config.get('max_len', 50)
+                        }
+                    else:
+                        domain_info = {
+                            'display_name': f'Domain_{domain_id}',
+                            'effective_length': 50
+                        }
+                    
+                    # 准备注意力数据
+                    attention_data = {
+                        'branch1': branch1_attn,
+                        'branch2': branch2_attn,
+                        'adaptive_weights': adaptive_weights
+                    }
+                    
+                    # 使用增强可视化
+                    fig, saved_files = plot_fourier_attention_journal(
+                        attention_data, domain_info, layer_idx, step, 
+                        viz_config, save_plots=args.save_publication_figs
+                    )
+                    
+                    # 记录到TensorBoard
+                    writer.add_figure(f'Enhanced_Fourier_Rating_Detail_Domain{domain_id}/Layer_{layer_idx}', fig, step)
+                    
+                    # 记录到SwanLab
+                    if swanlab.get_run() is not None:
+                        swanlab.log({
+                            f"enhanced_fourier_attention/domain_{domain_id}_layer_{layer_idx}": swanlab.Image(fig),
+                            f"enhanced_fourier_attention/epoch": step
+                        }, step=step)
+                    
+                    plt.close(fig)
+                    
+                    if saved_files:
+                        print(f"  Enhanced Fourier attention (Domain {domain_id}, Layer {layer_idx}): {len(saved_files)} files")
+                
+                # 生成多领域对比图（如果有多个领域）
+                if len(fourier_attention_data) > 1:
+                    try:
+                        from visualization import plot_multi_domain_fourier_comparison_journal
+                        
+                        multi_fig, multi_saved_files = plot_multi_domain_fourier_comparison_journal(
+                            fourier_attention_data, domain_map, layer_idx, step,
+                            viz_config, save_plots=args.save_publication_figs
+                        )
+                        
+                        # 记录多领域对比图
+                        writer.add_figure(f'Enhanced_Multi_Domain_Fourier_Comparison/Layer_{layer_idx}', multi_fig, step)
+                        
+                        if swanlab.get_run() is not None:
+                            swanlab.log({
+                                f"enhanced_multi_domain_fourier/layer_{layer_idx}": swanlab.Image(multi_fig),
+                                f"enhanced_multi_domain_fourier/epoch": step
+                            }, step=step)
+                        
+                        plt.close(multi_fig)
+                        
+                        if multi_saved_files:
+                            print(f"  Enhanced Multi-Domain Fourier comparison (Layer {layer_idx}): {len(multi_saved_files)} files")
+                    
+                    except ImportError:
+                        print("  ⚠ Multi-domain comparison not available")
+                    except Exception as e:
+                        print(f"  ⚠ Multi-domain comparison failed: {e}")
+            else:
+                # 单领域格式
+                branch1_attn = fourier_attention_data.get('attention_branch_1')
+                branch2_attn = fourier_attention_data.get('attention_branch_2')
+                adaptive_weights = fourier_attention_data.get('adaptive_weights')
+                
+                if branch1_attn is not None and branch2_attn is not None:
+                    domain_info = {'display_name': 'Single Domain', 'effective_length': 50}
+                    attention_data = {
+                        'branch1': branch1_attn,
+                        'branch2': branch2_attn,
+                        'adaptive_weights': adaptive_weights
+                    }
+                    
+                    fig, saved_files = plot_fourier_attention_journal(
+                        attention_data, domain_info, layer_idx, step,
+                        viz_config, save_plots=args.save_publication_figs
+                    )
+                    
+                    writer.add_figure(f'Enhanced_Fourier_Rating_Detail/Layer_{layer_idx}', fig, step)
+                    
+                    if swanlab.get_run() is not None:
+                        swanlab.log({
+                            f"enhanced_fourier_attention/layer_{layer_idx}": swanlab.Image(fig),
+                            f"enhanced_fourier_attention/epoch": step
+                        }, step=step)
+                    
+                    plt.close(fig)
+                    
+                    if saved_files:
+                        print(f"  Enhanced Fourier attention (Layer {layer_idx}): {len(saved_files)} files")
+        
+    except Exception as e:
+        print(f"⚠ Enhanced Fourier attention failed: {e}, using fallback")
+        log_fourier_rating_detailed_heatmap(
+            writer, step, fourier_attention_data, layer_idx,
+            domain_config_manager=domain_config_manager, domain_map=domain_map
+        )
 
 def setup_matplotlib():
     """Setup matplotlib for non-interactive use to prevent tkinter errors"""
@@ -120,19 +396,29 @@ def parse_args():
     parser.add_argument('--moe_load_balancing', default=True, type=str2bool, help='Use load balancing in MoE')
     parser.add_argument('--moe_balance_loss_weight', default=0.01, type=float, help='Weight for MoE load balancing loss')
     # --- Expert Specialization Optimization Parameters ---
-    parser.add_argument('--gate_temperature', default=2.0, type=float, help='Initial temperature for gate softmax')
+    parser.add_argument('--gate_temperature', default=1.0, type=float, help='Initial temperature for gate softmax')
     parser.add_argument('--min_gate_temperature', default=0.1, type=float, help='Minimum temperature for gate softmax')
     parser.add_argument('--temperature_decay', default=0.995, type=float, help='Temperature decay rate per step')
     parser.add_argument('--use_specialization_loss', default=True, type=str2bool, help='Enable specialization loss for expert specialization')
     parser.add_argument('--specialization_weight', default=0.01, type=float, help='Weight for specialization loss')
     parser.add_argument('--use_contrastive_loss', default=True, type=str2bool, help='Enable contrastive learning for expert specialization')
     parser.add_argument('--contrastive_weight', default=0.01, type=float, help='Weight for contrastive loss')
-    parser.add_argument('--use_adaptive_balance', default=True, type=str2bool, help='Use adaptive load balancing based on specialization')
+    parser.add_argument('--use_adaptive_balance', default=False, type=str2bool, help='Use adaptive load balancing based on specialization')
     # --- End Expert Specialization Optimization ---
     parser.add_argument('--visualize', default=True, type=str2bool, help='Enable visualization of expert usage')
     parser.add_argument('--log_freq', default=100, type=int, help='Frequency of logging visualizations (in steps)')
     parser.add_argument('--tsne_log_freq', default=1, type=int, help='Frequency of logging t-SNE plots (in epochs)')
     parser.add_argument('--tsne_sample_size', default=512, type=int, help='Number of points to sample for t-SNE plot')
+    # Enhanced visualization parameters
+    parser.add_argument('--journal_style', default='science', type=str, 
+                       choices=['nature', 'science', 'cell', 'high_quality'],
+                       help='Journal style for enhanced visualizations')
+    parser.add_argument('--viz_dpi', default=300, type=int, help='DPI for visualization outputs')
+    parser.add_argument('--viz_format', default='png', type=str, 
+                       choices=['pdf', 'png', 'svg', 'eps'],
+                       help='Primary format for visualization exports')
+    parser.add_argument('--save_publication_figs', default=False, type=str2bool,
+                       help='Save publication-quality figures using enhanced visualization')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for data loading.')
     # --- End MoE Integration ---
     # --- SwanLab Integration ---
@@ -263,18 +549,18 @@ def _log_single_domain_fourier_attention(writer, step, branch1_attn, branch2_att
     fig, axes = plt.subplots(1, 3, figsize=(fig_width, fig_height))
     
     try:
-        # Plot 1: Attention Branch 1 
-        im1 = axes[0].imshow(branch1_np, cmap='Reds', aspect='auto')
-        axes[0].set_title(f'Rating Attention Branch 1{domain_info}\n(Fine-grained Patterns)')
-        axes[0].set_xlabel('Rating Sequence Position (Key)')
-        axes[0].set_ylabel('Rating Sequence Position (Query)')
+        # Plot 1: Attention Branch 1 - 使用viridis配色与enhanced版本保持一致
+        im1 = axes[0].imshow(branch1_np, cmap='viridis', aspect='auto')
+        axes[0].set_title(f'Rating Attention Branch 1{domain_info}')
+        axes[0].set_xlabel('Position')
+        axes[0].set_ylabel('Position')
         plt.colorbar(im1, ax=axes[0])
         
-        # Plot 2: Attention Branch 2 
-        im2 = axes[1].imshow(branch2_np, cmap='Blues', aspect='auto')
-        axes[1].set_title(f'Rating Attention Branch 2{domain_info}\n(Coarse-grained Patterns)')
-        axes[1].set_xlabel('Rating Sequence Position (Key)')
-        axes[1].set_ylabel('Rating Sequence Position (Query)')
+        # Plot 2: Attention Branch 2 - 使用plasma配色与enhanced版本保持一致
+        im2 = axes[1].imshow(branch2_np, cmap='plasma', aspect='auto')
+        axes[1].set_title(f'Rating Attention Branch 2{domain_info}')
+        axes[1].set_xlabel('Position')
+        axes[1].set_ylabel('Position')
         plt.colorbar(im2, ax=axes[1])
         
         # Plot 3: Adaptive weights distribution
@@ -282,9 +568,9 @@ def _log_single_domain_fourier_attention(writer, step, branch1_attn, branch2_att
             adaptive_np = adaptive_weights.detach().cpu().numpy().mean(axis=0)  # (seq, 3)
             # 也需要裁剪adaptive weights到有效长度
             adaptive_np = adaptive_np[:effective_len, :]
-            im3 = axes[2].imshow(adaptive_np.T, cmap='Greens', aspect='auto')
+            im3 = axes[2].imshow(adaptive_np.T, cmap='RdYlBu_r', aspect='auto')  # 蓝黄平滑配色
             axes[2].set_title(f'Adaptive Scale Weights{domain_info}\n(Original, Branch1, Branch2)')
-            axes[2].set_xlabel('Rating Sequence Position')
+            axes[2].set_xlabel('Position')
             axes[2].set_ylabel('Scale Type (0:Original, 1:Branch1, 2:Branch2)')
             axes[2].set_yticks([0, 1, 2])
             axes[2].set_yticklabels(['Original', 'Branch1', 'Branch2'])
@@ -318,97 +604,6 @@ def _log_single_domain_fourier_attention(writer, step, branch1_attn, branch2_att
         del fig
         import gc
         gc.collect()  # Force garbage collection
-
-
-def log_multi_domain_fourier_comparison(writer, step, all_fourier_data, domain_config_manager, domain_map, layer_idx):
-    """
-    创建多领域Fourier attention对比视图，展示不同领域的特性差异
-    
-    Args:
-        writer: TensorBoard writer
-        step: Current epoch
-        all_fourier_data: Dict mapping {domain_id: attention_dict}
-        domain_config_manager: DomainAdaptiveConfig instance
-        domain_map: Dict mapping domain_id to dataset_name
-        layer_idx: Current layer index
-    """
-    if not all_fourier_data or not isinstance(all_fourier_data, dict):
-        return
-    
-    num_domains = len(all_fourier_data)
-    if num_domains < 2:
-        return  # 不足两个领域，无需对比
-    
-    try:
-        # 创建对比布局: 2行 x N列 (短期 + 长期)
-        fig, axes = plt.subplots(2, num_domains, figsize=(6 * num_domains, 12))
-        if num_domains == 1:
-            axes = axes.reshape(2, 1)
-        
-        for col, (domain_id, fourier_dict) in enumerate(sorted(all_fourier_data.items())):
-            if fourier_dict is None:
-                continue
-                
-            dataset_name = domain_map.get(domain_id, f"Domain{domain_id}")
-            domain_config = domain_config_manager.get_domain_config([dataset_name]) if domain_config_manager else {}
-            effective_len = domain_config.get('max_len', 50)
-            
-            # 获取规范的显示名称
-            display_name = domain_config_manager.get_display_name(dataset_name) if domain_config_manager else dataset_name
-            
-            # 获取attention数据
-            branch1_attn = fourier_dict.get('attention_branch_1')
-            branch2_attn = fourier_dict.get('attention_branch_2')
-            
-            if branch1_attn is None or branch2_attn is None:
-                continue
-            
-            # 处理维度并裁剪到有效长度
-            branch1_np = branch1_attn.detach().cpu().numpy()
-            branch2_np = branch2_attn.detach().cpu().numpy()
-            
-            if branch1_np.ndim > 2:
-                branch1_np = branch1_np.mean(axis=tuple(range(branch1_np.ndim - 2)))
-            if branch2_np.ndim > 2:
-                branch2_np = branch2_np.mean(axis=tuple(range(branch2_np.ndim - 2)))
-            
-            # 裁剪到有效区域
-            branch1_np = branch1_np[:effective_len, :effective_len]
-            branch2_np = branch2_np[:effective_len, :effective_len]
-            
-            # 绘制分支1 attention
-            im1 = axes[0, col].imshow(branch1_np, cmap='Reds', aspect='auto')
-            axes[0, col].set_title(f'{display_name}\nBranch1 ({effective_len}x{effective_len})')
-            axes[0, col].set_xlabel('Position')
-            axes[0, col].set_ylabel('Position')
-            plt.colorbar(im1, ax=axes[0, col])
-            
-            # 绘制分支2 attention
-            im2 = axes[1, col].imshow(branch2_np, cmap='Blues', aspect='auto')
-            axes[1, col].set_title(f'{display_name}\nBranch2 ({effective_len}x{effective_len})')
-            axes[1, col].set_xlabel('Position')
-            axes[1, col].set_ylabel('Position')
-            plt.colorbar(im2, ax=axes[1, col])
-        
-        plt.suptitle(f'Multi-Domain Fourier Rating Attention Comparison - Layer {layer_idx} (Epoch {step})', fontsize=16)
-        plt.tight_layout()
-        
-        # 记录到TensorBoard和WandB
-        writer.add_figure(f'Multi_Domain_Fourier_Comparison/Layer_{layer_idx}', fig, step)
-        if swanlab.get_run() is not None:
-            swanlab.log({
-                f"multi_domain_fourier_comparison/layer_{layer_idx}": swanlab.Image(fig),
-                "epoch": step
-            })
-            
-    except Exception as e:
-        print(f"Warning: Failed to create multi-domain comparison: {e}")
-    finally:
-        plt.close(fig)
-        plt.close('all')
-        del fig
-        import gc
-        gc.collect()
 
 
 def log_domain_expert_heatmap(writer, step, data, num_shared_experts, domain_map, strategy='vanilla', domain_config_manager=None):
@@ -560,6 +755,96 @@ def log_tsne_expert_specialization(writer, step, embeddings, labels, domains, nu
         import gc
         gc.collect()  # Force garbage collection
 
+def log_multi_domain_fourier_comparison(writer, step, all_fourier_data, domain_config_manager, domain_map, layer_idx):
+    """
+    创建多领域Fourier attention对比视图，展示不同领域的特性差异
+    
+    Args:
+        writer: TensorBoard writer
+        step: Current epoch
+        all_fourier_data: Dict mapping {domain_id: attention_dict}
+        domain_config_manager: DomainAdaptiveConfig instance
+        domain_map: Dict mapping domain_id to dataset_name
+        layer_idx: Current layer index
+    """
+    if not all_fourier_data or not isinstance(all_fourier_data, dict):
+        return
+    
+    num_domains = len(all_fourier_data)
+    if num_domains < 2:
+        return  # 不足两个领域，无需对比
+    
+    try:
+        # 创建对比布局: 2行 x N列 (短期 + 长期)
+        fig, axes = plt.subplots(2, num_domains, figsize=(6 * num_domains, 12))
+        if num_domains == 1:
+            axes = axes.reshape(2, 1)
+        
+        for col, (domain_id, fourier_dict) in enumerate(sorted(all_fourier_data.items())):
+            if fourier_dict is None:
+                continue
+                
+            dataset_name = domain_map.get(domain_id, f"Domain{domain_id}")
+            domain_config = domain_config_manager.get_domain_config([dataset_name]) if domain_config_manager else {}
+            effective_len = domain_config.get('max_len', 50)
+            
+            # 获取规范的显示名称
+            display_name = domain_config_manager.get_display_name(dataset_name) if domain_config_manager else dataset_name
+            
+            # 获取attention数据
+            branch1_attn = fourier_dict.get('attention_branch_1')
+            branch2_attn = fourier_dict.get('attention_branch_2')
+            
+            if branch1_attn is None or branch2_attn is None:
+                continue
+            
+            # 处理维度并裁剪到有效长度
+            branch1_np = branch1_attn.detach().cpu().numpy()
+            branch2_np = branch2_attn.detach().cpu().numpy()
+            
+            if branch1_np.ndim > 2:
+                branch1_np = branch1_np.mean(axis=tuple(range(branch1_np.ndim - 2)))
+            if branch2_np.ndim > 2:
+                branch2_np = branch2_np.mean(axis=tuple(range(branch2_np.ndim - 2)))
+            
+            # 裁剪到有效区域
+            branch1_np = branch1_np[:effective_len, :effective_len]
+            branch2_np = branch2_np[:effective_len, :effective_len]
+            
+            # 绘制分支1 attention
+            im1 = axes[0, col].imshow(branch1_np, cmap='Reds', aspect='auto')
+            axes[0, col].set_title(f'{display_name}\nBranch1 ({effective_len}x{effective_len})')
+            axes[0, col].set_xlabel('Position')
+            axes[0, col].set_ylabel('Position')
+            plt.colorbar(im1, ax=axes[0, col])
+            
+            # 绘制分支2 attention
+            im2 = axes[1, col].imshow(branch2_np, cmap='Blues', aspect='auto')
+            axes[1, col].set_title(f'{display_name}\nBranch2 ({effective_len}x{effective_len})')
+            axes[1, col].set_xlabel('Position')
+            axes[1, col].set_ylabel('Position')
+            plt.colorbar(im2, ax=axes[1, col])
+        
+        plt.suptitle(f'Multi-Domain Fourier Rating Attention Comparison - Layer {layer_idx} (Epoch {step})', fontsize=16)
+        plt.tight_layout()
+        
+        # 记录到TensorBoard和WandB
+        writer.add_figure(f'Multi_Domain_Fourier_Comparison/Layer_{layer_idx}', fig, step)
+        if swanlab.get_run() is not None:
+            swanlab.log({
+                f"multi_domain_fourier_comparison/layer_{layer_idx}": swanlab.Image(fig),
+                "epoch": step
+            })
+            
+    except Exception as e:
+        print(f"Warning: Failed to create multi-domain comparison: {e}")
+    finally:
+        plt.close(fig)
+        plt.close('all')
+        del fig
+        import gc
+        gc.collect()
+
 
 def main():
     # Setup matplotlib early to prevent tkinter issues
@@ -570,6 +855,11 @@ def main():
     if args.seed is not None:
         set_seed(args.seed)
 
+    # Initialize enhanced visualization
+    enhanced_viz_config = setup_enhanced_visualization(args)
+    if enhanced_viz_config:
+        print(f"📊 Enhanced visualization enabled with {args.journal_style} style")
+    
     # Initialize SwanLab
     if args.use_swanlab:
         swanlab.init(
@@ -826,51 +1116,78 @@ def main():
         if args.visualize and epoch % args.tsne_log_freq == 0:
              # Log t-SNE plot at the end of the epoch
             if 'tsne_embeddings' in viz_data:
-                log_tsne_expert_specialization(
-                    writer, epoch,
-                    viz_data['tsne_embeddings'],
-                    viz_data['tsne_labels'],
-                    viz_data['tsne_domains'],
-                    # 适配 'shared_base' 策略，此时专家数量为领域专家数量
-                    model.forward_layers[0].moe_ffn.num_domain_experts if args.moe_routing_strategy == 'shared_base' else model.forward_layers[0].moe_ffn.num_experts,
-                    domain_map,
-                    args,
-                    sample_size=args.tsne_sample_size,
-                    domain_config_manager=domain_config_manager
-                )
+                # Use enhanced visualization if available
+                if enhanced_viz_config:
+                    log_enhanced_tsne_specialization(
+                        writer, epoch,
+                        viz_data['tsne_embeddings'],
+                        viz_data['tsne_labels'],
+                        viz_data['tsne_domains'],
+                        domain_map,
+                        args, 
+                        enhanced_viz_config
+                    )
+                else:
+                    log_tsne_expert_specialization(
+                        writer, epoch,
+                        viz_data['tsne_embeddings'],
+                        viz_data['tsne_labels'],
+                        viz_data['tsne_domains'],
+                        # 适配 'shared_base' 策略，此时专家数量为领域专家数量
+                        model.forward_layers[0].moe_ffn.num_domain_experts if args.moe_routing_strategy == 'shared_base' else model.forward_layers[0].moe_ffn.num_experts,
+                        domain_map,
+                        args,
+                        sample_size=args.tsne_sample_size,
+                        domain_config_manager=domain_config_manager
+                    )
 
         # --- Log epoch-level domain-expert heatmap ---
         if args.visualize and epoch_domain_expert_load is not None and epoch_viz_step_count > 0:
             # Calculate average domain-expert load over the entire epoch
             avg_domain_expert_load = epoch_domain_expert_load / epoch_viz_step_count
-            log_domain_expert_heatmap(
-                writer, epoch, avg_domain_expert_load, 
-                model.forward_layers[0].moe_ffn.num_shared_experts, 
-                domain_map, 
-                strategy=args.moe_routing_strategy,
-                domain_config_manager=domain_config_manager
-            )
+            
+            # Use enhanced visualization if available
+            if enhanced_viz_config:
+                log_enhanced_expert_routing(
+                    writer, epoch, avg_domain_expert_load, 
+                    domain_map, args.moe_routing_strategy, args, enhanced_viz_config
+                )
+            else:
+                log_domain_expert_heatmap(
+                    writer, epoch, avg_domain_expert_load, 
+                    model.forward_layers[0].moe_ffn.num_shared_experts, 
+                    domain_map, 
+                    strategy=args.moe_routing_strategy,
+                    domain_config_manager=domain_config_manager
+                )
         
         # --- Log epoch-level rating attention heatmap ---
         if args.visualize and 'fourier_rating_attention_detailed' in viz_data:
             fourier_detailed = viz_data['fourier_rating_attention_detailed']
             for layer_idx, fourier_attn_data in enumerate(fourier_detailed):
                 if fourier_attn_data is not None:
-                    # 🎯 传递领域配置信息给可视化函数
-                    log_fourier_rating_detailed_heatmap(
-                        writer, epoch, fourier_attn_data, layer_idx,
-                        domain_config_manager=domain_config_manager,
-                        domain_map=domain_map
-                    )
-                    
-                    # 🎯 额外生成多领域对比视图（如果是多领域数据）
-                    if (isinstance(fourier_attn_data, dict) and 
-                        len(fourier_attn_data) > 1 and 
-                        domain_config_manager is not None):
-                        log_multi_domain_fourier_comparison(
-                            writer, epoch, fourier_attn_data, 
-                            domain_config_manager, domain_map, layer_idx
+                    # 使用增强可视化或回退到原始函数
+                    if enhanced_viz_config:
+                        log_enhanced_fourier_attention(
+                            writer, epoch, fourier_attn_data, layer_idx,
+                            domain_config_manager, domain_map, args, enhanced_viz_config
                         )
+                    else:
+                        # 🎯 传递领域配置信息给可视化函数
+                        log_fourier_rating_detailed_heatmap(
+                            writer, epoch, fourier_attn_data, layer_idx,
+                            domain_config_manager=domain_config_manager,
+                            domain_map=domain_map
+                        )
+                        
+                        # 🎯 额外生成多领域对比视图（如果是多领域数据）
+                        if (isinstance(fourier_attn_data, dict) and 
+                            len(fourier_attn_data) > 1 and 
+                            domain_config_manager is not None):
+                            log_multi_domain_fourier_comparison(
+                                writer, epoch, fourier_attn_data, 
+                                domain_config_manager, domain_map, layer_idx
+                            )
         # --- End epoch-level heatmap logging ---
 
         if epoch % 1 == 0:
@@ -898,7 +1215,16 @@ def main():
                         overall_metrics[metric_name] = v
 
                 for domain_id, d_metrics in sorted(domain_metrics.items()):
-                    domain_name = domain_map.get(domain_id, f"Unknown Domain {domain_id}")
+                    raw_domain_name = domain_map.get(domain_id, f"Unknown Domain {domain_id}")
+                    # 规范化领域名称显示
+                    if not raw_domain_name.startswith("Unknown Domain"):
+                        try:
+                            from visualization.enhanced_plots import _normalize_domain_name
+                            domain_name = _normalize_domain_name(raw_domain_name)
+                        except ImportError:
+                            domain_name = raw_domain_name
+                    else:
+                        domain_name = raw_domain_name
                     print(f"    - {BOLD}Domain: {domain_name}{RESET}")
                     metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in sorted(d_metrics.items())])
                     print(f"        {metrics_str}")

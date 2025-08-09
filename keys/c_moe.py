@@ -109,10 +109,10 @@ class HAGMoEFFN(nn.Module):
         self.use_adaptive_balance = getattr(args, 'use_adaptive_balance', False)
 
     def _create_expert(self, hidden_units, args):
-        # Default MLP expert
+        # MLP expert with Swish activation (better for Transformer architectures)
         return nn.Sequential(
             nn.Linear(hidden_units, hidden_units * 2),
-            nn.ReLU(),
+            nn.SiLU(),  # Swish activation function
             nn.Linear(hidden_units * 2, hidden_units),
             nn.Dropout(p=args.dropout_rate)
         )
