@@ -801,8 +801,33 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
             elif branch2_np.ndim == 3:
                 branch2_np = branch2_np.mean(axis=0)
             
-            # 获取有效长度
-            effective_len = min(50, branch1_np.shape[0])  # 可以根据需要调整
+            # 使用domain_config预定义的领域配置策略
+            try:
+                from keys.domain_config import DomainAdaptiveConfig
+                domain_config = DomainAdaptiveConfig()
+                
+                # 从domain_map获取原始数据集名称（如：'beauty_5_5'）
+                raw_domain_name = None
+                for did, dname in domain_map.items():
+                    if did == domain_id:
+                        raw_domain_name = dname
+                        break
+                
+                # 获取预定义的max_len
+                if raw_domain_name and raw_domain_name in domain_config.DOMAIN_CONFIGS:
+                    base_len = domain_config.DOMAIN_CONFIGS[raw_domain_name]['max_len']
+                else:
+                    base_len = domain_config.DEFAULT_CONFIG['max_len']
+                    
+            except (ImportError, Exception) as e:
+                # 如果无法访问domain_config，使用备选方案
+                print(f"⚠ Failed to load domain config: {e}, using fallback")
+                base_len = 25  # 安全默认值
+            
+            # 结合实际数据形状确定最终有效长度
+            effective_len = min(base_len, branch1_np.shape[0])
+            effective_len = max(10, effective_len)  # 确保至少有10个位置用于可视化
+            
             branch1_np = branch1_np[:effective_len, :effective_len]
             branch2_np = branch2_np[:effective_len, :effective_len]
             

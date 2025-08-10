@@ -337,7 +337,7 @@ def parse_args():
     parser.add_argument('--train_dir', required=True)
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--lr', default=0.001, type=float)
-    parser.add_argument('--maxlen', default=100, type=int, help='Maximum sequence length.')
+    parser.add_argument('--maxlen', default=200, type=int, help='Maximum sequence length.')
     parser.add_argument('--hidden_units', default=64, type=int, help='Size of hidden vectors.')
     parser.add_argument('--num_blocks', default=2, type=int, help='Number of transformer blocks.')
     parser.add_argument('--num_epochs', default=100, type=int)
