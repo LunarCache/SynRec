@@ -738,17 +738,17 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
         else:
             domain_names.append(f"Domain_{domain_id}")
     
-    # 创建2行N列的布局 (Branch1 + Branch2 对比)
+    # 创建3行N列的布局 (Branch1 + Branch2 + Adaptive Weights)
     figsize = viz.config.get_figsize('double')
     fig_width = max(figsize[0], num_domains * 4.5)  # 根据领域数量调整宽度
-    fig_height = 8.0  # 固定高度适合2行布局
+    fig_height = 12.0  # 增加高度适合3行布局
     
-    fig, axes = plt.subplots(2, num_domains, figsize=(fig_width, fig_height),
+    fig, axes = plt.subplots(3, num_domains, figsize=(fig_width, fig_height),
                             facecolor='white', edgecolor='none')
     
     # 确保axes是2D数组
     if num_domains == 1:
-        axes = axes.reshape(2, 1)
+        axes = axes.reshape(3, 1)
     
     try:
         # 处理每个领域的数据
@@ -759,10 +759,11 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
             # 提取注意力数据
             branch1 = attention_dict.get('attention_branch_1')
             branch2 = attention_dict.get('attention_branch_2')
+            adaptive_weights = attention_dict.get('adaptive_weights')
             
             if branch1 is None or branch2 is None:
                 # 如果数据缺失，显示空白
-                for row in range(2):
+                for row in range(3):
                     axes[row, col].text(0.5, 0.5, 'Data Not Available',
                                        ha='center', va='center',
                                        transform=axes[row, col].transAxes,
@@ -773,6 +774,21 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
             # 处理数据维度
             branch1_np = branch1.detach().cpu().numpy()
             branch2_np = branch2.detach().cpu().numpy()
+            
+            # 处理adaptive_weights数据 - 形状为(batch, seq, 3)
+            adaptive_weights_components = None
+            if adaptive_weights is not None:
+                adaptive_weights_np = adaptive_weights.detach().cpu().numpy()
+                # 处理adaptive_weights维度 - 期望(batch, seq, 3)
+                if adaptive_weights_np.ndim == 3 and adaptive_weights_np.shape[-1] == 3:
+                    # 对batch维度取平均
+                    adaptive_weights_avg = adaptive_weights_np.mean(axis=0)  # (seq, 3)
+                    # 分离三个权重分量
+                    adaptive_weights_components = {
+                        'origin': adaptive_weights_avg[:, 0],      # Origin权重
+                        'branch1': adaptive_weights_avg[:, 1],     # Branch1权重  
+                        'branch2': adaptive_weights_avg[:, 2]      # Branch2权重
+                    }
             
             # 维度处理
             if branch1_np.ndim == 4:  # (batch, heads, seq, seq)
@@ -790,6 +806,11 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
             branch1_np = branch1_np[:effective_len, :effective_len]
             branch2_np = branch2_np[:effective_len, :effective_len]
             
+            # 处理adaptive_weights的尺寸 - 截取有效长度
+            if adaptive_weights_components is not None:
+                for key in adaptive_weights_components:
+                    adaptive_weights_components[key] = adaptive_weights_components[key][:effective_len]
+            
             # 应用平滑处理
             branch1_smooth = viz._smooth_attention_matrix(branch1_np,
                                                          smooth_method='gaussian',
@@ -803,6 +824,7 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
             # 创建平滑的色彩映射
             smooth_viridis = viz._create_smooth_colormap('viridis', n_levels=512)
             smooth_plasma = viz._create_smooth_colormap('plasma', n_levels=512)
+            smooth_cividis = viz._create_smooth_colormap('cividis', n_levels=512)
             
             # 绘制Branch 1 (第一行) - 使用平滑数据
             im1 = axes[0, col].imshow(branch1_smooth, cmap=smooth_viridis, aspect='auto',
@@ -834,16 +856,68 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
             if col == 0:  # 只在第一列显示y轴标签
                 axes[1, col].set_ylabel('Position', fontsize=viz.config.label_size)
             
-            # 底部一行显示x轴标签
-            axes[1, col].set_xlabel('Position', fontsize=viz.config.label_size)
-            
             # 添加颜色条
             cbar2 = plt.colorbar(im2, ax=axes[1, col], shrink=0.8, aspect=15)
             cbar2.set_label('Attention Weight', fontsize=viz.config.font_size-1)
             cbar2.ax.tick_params(labelsize=viz.config.font_size-2)
             
+            # 绘制Adaptive Weights (第三行) - 显示3个权重分量的对比
+            if adaptive_weights_components is not None:
+                # 准备x轴位置
+                positions = np.arange(effective_len)
+                
+                # 获取期刊颜色方案
+                if viz.config.journal_style == 'nature':
+                    colors = viz.color_schemes.nature_colors
+                elif viz.config.journal_style == 'science':
+                    colors = viz.color_schemes.science_colors
+                elif viz.config.journal_style == 'cell':
+                    colors = viz.color_schemes.cell_colors
+                else:
+                    colors = viz.color_schemes.nature_colors  # 默认
+                
+                # 绘制3条线，表示3个权重分量
+                axes[2, col].plot(positions, adaptive_weights_components['origin'], 
+                                 color=colors['primary'], linewidth=2.5, alpha=0.8, 
+                                 label='Origin', marker='o', markersize=3, markevery=5)
+                axes[2, col].plot(positions, adaptive_weights_components['branch1'], 
+                                 color=colors['secondary'], linewidth=2.5, alpha=0.8,
+                                 label='Branch1', marker='s', markersize=3, markevery=5)
+                axes[2, col].plot(positions, adaptive_weights_components['branch2'], 
+                                 color=colors['accent'], linewidth=2.5, alpha=0.8,
+                                 label='Branch2', marker='^', markersize=3, markevery=5)
+                
+                axes[2, col].set_title(f'{domain_name}\nAdaptive Weights', 
+                                      fontsize=viz.config.title_size, 
+                                      fontweight='bold', pad=10)
+                
+                if col == 0:  # 只在第一列显示y轴标签
+                    axes[2, col].set_ylabel('Weight Value', fontsize=viz.config.label_size)
+                
+                # 第三行显示x轴标签
+                axes[2, col].set_xlabel('Sequence Position', fontsize=viz.config.label_size)
+                
+                # 添加图例 (每个领域都添加)
+                axes[2, col].legend(loc='upper right', fontsize=viz.config.font_size-1,
+                                   framealpha=0.9)
+                
+                # 设置y轴范围，确保权重值在合理范围内显示
+                axes[2, col].set_ylim(0, None)  # 权重值应该是非负的
+                
+                # 添加网格增强可读性
+                axes[2, col].grid(True, alpha=0.3, linestyle='--')
+            else:
+                # 如果没有adaptive_weights数据，显示提示信息
+                axes[2, col].text(0.5, 0.5, 'Adaptive Weights\nNot Available',
+                                 ha='center', va='center',
+                                 transform=axes[2, col].transAxes,
+                                 fontsize=viz.config.font_size)
+                if col == 0:
+                    axes[2, col].set_ylabel('Weight Value', fontsize=viz.config.label_size)
+                axes[2, col].set_xlabel('Sequence Position', fontsize=viz.config.label_size)
+            
             # 应用专业样式
-            for row in range(2):
+            for row in range(3):
                 viz._apply_professional_styling(axes[row, col])
                 
                 # 设置刻度
@@ -851,12 +925,12 @@ def plot_multi_domain_fourier_comparison_journal(multi_domain_data: Dict[int, Di
                                           labelsize=viz.config.font_size-1)
         
         # 添加整体标题
-        fig.suptitle(f'Multi-Domain Fourier Rating Attention Comparison - Layer {layer_idx} (Epoch {epoch})',
-                    fontsize=viz.config.title_size + 2, fontweight='bold', y=0.95)
+        fig.suptitle(f'Multi-Domain Fourier Attention Analysis: Branches & Adaptive Weights - Layer {layer_idx} (Epoch {epoch})',
+                    fontsize=viz.config.title_size + 2, fontweight='bold', y=0.96)
         
-        # 调整布局
-        plt.tight_layout(rect=[0, 0, 1, 0.92])
-        plt.subplots_adjust(hspace=0.35, wspace=0.3)
+        # 调整布局 - 为3行布局优化间距
+        plt.tight_layout(rect=[0, 0, 1, 0.93])
+        plt.subplots_adjust(hspace=0.4, wspace=0.3)
         
         # 保存图片
         saved_files = []
