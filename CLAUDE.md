@@ -20,8 +20,8 @@ python main.py --train_dir <experiment_name>
 # Training with specific datasets
 python main.py --train_dir <experiment_name> --use_datasets beauty_5_5 games_5_5
 
-# Training with enhanced visualization
-python main.py --train_dir <experiment_name> --save_publication_figs true --journal_style science
+# Training with optimized temporal-frequency rating strategy
+python main.py --train_dir <experiment_name> --rating_strategy temporal_fourier
 ```
 
 ### Inference/Evaluation
@@ -65,15 +65,18 @@ python gradient_check.py
   - Specialization and contrastive losses
   - Adaptive gating with temperature control
 
-- **Rating Modules** (`keys/rating_modules.py`): Advanced rating information modeling:
-  - FourierRatingEncoder: FFT-based multi-scale rating analysis
-  - Dual-branch attention for temporal pattern learning
-  - Adaptive fusion mechanisms
+- **Rating Module** (`keys/temporal_rating_modules.py`): Optimized temporal-frequency rating modeling:
+  - OptimizedFourierRatingEncoder: Advanced FFT-based time-frequency analysis
+  - Z-score normalization for numerical stability
+  - Learnable frequency cutoff with soft boundaries
+  - Spectral leakage prevention using windowing
+  - Dual-branch attention for low/high frequency patterns
+  - Unified domain processing with adaptive parameters
 
-### Domain Management
-- **Domain Config** (`keys/domain_config.py`): Automatic parameter tuning based on dataset characteristics
-- **Multi-domain Training**: Supports beauty, games, and MovieLens datasets simultaneously
-- **Domain-aware Sampling**: Stratified sampling for balanced multi-domain learning
+### Unified Architecture
+- **Simplified Design**: Single optimized rating encoder handles all domains
+- **Learnable Parameters**: Automatic frequency cutoff optimization eliminates manual tuning
+- **Multi-domain Training**: Supports beauty, games, and MovieLens datasets with unified processing
 
 ### Visualization System
 - **Enhanced Visualization** (`visualization/`): Publication-quality plots with multiple journal styles
@@ -81,8 +84,8 @@ python gradient_check.py
 - **Expert Analysis**: t-SNE plots, attention heatmaps, routing visualizations
 
 ### Key Features
-- **Fourier Rating Strategy**: Default and recommended approach using FFT for rating sequence analysis
-- **Adaptive Configuration**: Automatic parameter optimization per domain
+- **Temporal-Fourier Rating Strategy**: Optimized time-frequency domain analysis with learnable parameters
+- **Unified Processing**: Single encoder adaptively handles all domains without manual configuration
 - **Performance-based Visualization**: Generates plots only when model improves
 - **Multi-format Export**: PDF, PNG, SVG support for publications
 
@@ -94,19 +97,20 @@ python gradient_check.py
 ## Model Configuration
 
 ### Key Hyperparameters
-- `--rating_strategy fourier`: Use Fourier-based rating encoding (recommended)
-- `--use_adaptive_rating_config true`: Enable domain-specific parameter tuning
+- `--rating_strategy temporal_fourier`: Use optimized temporal-frequency rating encoding (recommended)
 - `--moe_routing_strategy shared_base`: Use shared base expert routing
 - `--viz_on_improvement true`: Generate visualizations only on performance gains
 
 ### Performance Optimization
 - Models automatically save only when test performance improves
 - Visualization triggered by performance gains to reduce overhead
-- Domain-adaptive configurations minimize computational cost while maximizing accuracy
+- Unified architecture minimizes computational cost while maximizing accuracy
+- Learnable parameters eliminate the need for manual domain-specific tuning
 
 ## Important Files
 - `main.py`: Primary training and evaluation script
 - `keys/model.py`: Core HAGMRec model implementation
+- `keys/temporal_rating_modules.py`: Optimized temporal-frequency rating encoder
 - `keys/utils.py`: Data loading and evaluation utilities
 - `exp/`: Experiment outputs (models, logs, visualizations)
 - `data/`: Preprocessed datasets

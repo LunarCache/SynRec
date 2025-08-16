@@ -36,13 +36,10 @@ def test_model_creation():
             
             # Rating embedding parameters
             self.use_rating_emb = True
-            self.rating_strategy = 'fourier'
-            self.use_adaptive_rating_config = True
-            self.rating_pos_emb = True
+            self.rating_strategy = 'temporal_fourier'  # Updated to use new strategy
             self.use_datasets = ['beauty_rated', 'games', 'ml-1m_rated']
             
-            # Context and fusion parameters
-            self.use_context = True
+            # Fusion parameters  
             self.use_gated_fusion = True
             
             # Loss parameters
@@ -50,7 +47,6 @@ def test_model_creation():
             self.specialization_weight = 0.01
             self.use_contrastive_loss = True
             self.contrastive_weight = 0.01
-            self.gate_temperature = 2.0
             
             # Legacy parameters for compatibility
             self.contrastive_learning = True
@@ -224,68 +220,6 @@ def test_data_loading():
         print(f"   ✗ Data loading test failed: {e}")
         return False
 
-def test_domain_adaptive_rating():
-    """测试领域自适应fourier评分"""
-    print("\n5. Testing domain adaptive fourier rating...")
-    
-    try:
-        from keys.rating_modules import EnhancedRatingModule
-        
-        class MockArgs:
-            def __init__(self):
-                self.use_datasets = ['beauty_rated', 'games', 'ml-1m_rated']
-                self.use_adaptive_rating_config = True
-                self.rating_strategy = 'fourier'
-                self.rating_num_frequencies = 12
-                self.rating_branch1_heads = 1
-                self.rating_branch2_heads = 1
-                self.maxlen = 100
-        
-        args = MockArgs()
-        hidden_units = 64
-        
-        # 创建领域自适应评分模块
-        rating_module = EnhancedRatingModule(hidden_units, 'fourier', 0.1, args)
-        rating_module.eval()
-        
-        print(f"   ✓ Created {len(rating_module.domain_encoders)} domain-specific encoders")
-        
-        # 测试不同领域的数据
-        batch_size, seq_len = 6, 20
-        rating_seq = torch.randint(1, 6, (batch_size, seq_len))  # 评分1-5
-        domain_ids = torch.LongTensor([0, 0, 1, 1, 2, 2])  # 3个领域，每个2个样本
-        
-        # 测试forward pass
-        enhanced_rating_repr, extra_info = rating_module(rating_seq, domain_ids)
-        
-        print(f"   ✓ Domain adaptive forward pass successful")
-        print(f"   ✓ Input rating shape: {rating_seq.shape}")
-        print(f"   ✓ Output representation shape: {enhanced_rating_repr.shape}")
-        print(f"   ✓ Domain IDs: {domain_ids.tolist()}")
-        
-        # 检查不同领域是否确实使用了不同的处理
-        domain_0_repr = enhanced_rating_repr[domain_ids == 0]
-        domain_1_repr = enhanced_rating_repr[domain_ids == 1] 
-        domain_2_repr = enhanced_rating_repr[domain_ids == 2]
-        
-        print(f"   ✓ Domain 0 samples: {domain_0_repr.shape[0]}")
-        print(f"   ✓ Domain 1 samples: {domain_1_repr.shape[0]}")
-        print(f"   ✓ Domain 2 samples: {domain_2_repr.shape[0]}")
-        
-        # 测试配置摘要
-        config_summary = rating_module.get_config_summary()
-        print(f"   ✓ Configuration loaded for {config_summary['num_domains']} domains")
-        
-        # 测试attention权重收集
-        if 'attention_weights' in extra_info:
-            print(f"   ✓ Attention weights collected successfully")
-        
-        return True
-    except Exception as e:
-        print(f"   ✗ Domain adaptive rating test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
 def test_moe_component():
     """测试MoE组件"""
@@ -309,7 +243,6 @@ def test_moe_component():
                 self.specialization_weight = 0.01
                 self.use_contrastive_loss = True
                 self.contrastive_weight = 0.01
-                self.gate_temperature = 2.0
                 self.use_gated_fusion = True
                 
                 # Legacy parameters for compatibility
@@ -437,8 +370,7 @@ def main():
     # 4. 数据加载测试
     test_results.append(test_data_loading())
     
-    # 5. 领域自适应fourier评分测试
-    test_results.append(test_domain_adaptive_rating())
+    # Note: Domain adaptive rating test removed - now using unified temporal_fourier strategy
     
     # 6. MoE组件测试
     test_results.append(test_moe_component())

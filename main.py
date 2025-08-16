@@ -162,134 +162,6 @@ def log_enhanced_tsne_specialization(writer, step, embeddings, labels, domains, 
     except Exception as e:
         print(f"⚠ Enhanced t-SNE failed: {e}")
 
-def log_enhanced_fourier_attention(writer, step, fourier_attention_data, layer_idx, 
-                                   domain_config_manager, domain_map, args, viz_config=None):
-    """增强的Fourier注意力可视化"""
-    # writer参数保留兼容性，但已不使用（TensorBoard已移除）
-    if not ENHANCED_VIZ_AVAILABLE or viz_config is None:
-        print(f"⚠️ Enhanced visualization not available - Fourier attention visualization skipped")
-        return
-    
-    if not fourier_attention_data:
-        return
-    
-    try:
-        if isinstance(fourier_attention_data, dict):
-            keys = list(fourier_attention_data.keys())
-            if keys and isinstance(keys[0], (int, str)) and str(keys[0]).isdigit():
-                # 多领域格式：{domain_id: attention_dict}
-                for domain_id, fourier_attention_dict in fourier_attention_data.items():
-                    if fourier_attention_dict is None:
-                        continue
-                    
-                    # 提取attention组件
-                    branch1_attn = fourier_attention_dict.get('attention_branch_1')
-                    branch2_attn = fourier_attention_dict.get('attention_branch_2')
-                    adaptive_weights = fourier_attention_dict.get('adaptive_weights')
-                    
-                    if branch1_attn is None or branch2_attn is None:
-                        continue
-                    
-                    # 获取领域配置信息
-                    domain_info = {}
-                    if domain_config_manager and domain_map and domain_id in domain_map:
-                        dataset_name = domain_map[domain_id]
-                        domain_config = domain_config_manager.get_domain_config([dataset_name])
-                        domain_info = {
-                            'display_name': domain_config_manager.get_display_name(dataset_name),
-                            'effective_length': domain_config.get('max_len', 50)
-                        }
-                    else:
-                        domain_info = {
-                            'display_name': f'Domain_{domain_id}',
-                            'effective_length': 50
-                        }
-                    
-                    # 准备注意力数据
-                    attention_data = {
-                        'branch1': branch1_attn,
-                        'branch2': branch2_attn,
-                        'adaptive_weights': adaptive_weights
-                    }
-                    
-                    # 使用增强可视化
-                    fig, saved_files = plot_fourier_attention_journal(
-                        attention_data, domain_info, layer_idx, step, 
-                        viz_config, save_plots=args.save_publication_figs
-                    )
-                    
-                    
-                    if args.use_swanlab:
-                        if swanlab.get_run() is not None:
-                            swanlab.log({
-                                f"enhanced_fourier_attention/domain_{domain_id}_layer_{layer_idx}": swanlab.Image(fig)
-                            }, step=step)
-                    
-                    plt.close(fig)
-                    
-                    if saved_files:
-                        print(f"  Enhanced Fourier attention (Domain {domain_id}, Layer {layer_idx}): {len(saved_files)} files")
-                
-                # 生成多领域对比图（如果有多个领域）
-                if len(fourier_attention_data) > 1:
-                    try:
-                        from visualization import plot_multi_domain_fourier_comparison_journal
-                        
-                        multi_fig, multi_saved_files = plot_multi_domain_fourier_comparison_journal(
-                            fourier_attention_data, domain_map, layer_idx, step,
-                            viz_config, save_plots=args.save_publication_figs
-                        )
-                        
-                            
-                        if args.use_swanlab:
-                            if swanlab.get_run() is not None:
-                                swanlab.log({
-                                    f"enhanced_multi_domain_fourier/layer_{layer_idx}": swanlab.Image(multi_fig)
-                                }, step=step)
-                        
-                        plt.close(multi_fig)
-                        
-                        if multi_saved_files:
-                            print(f"  Enhanced Multi-Domain Fourier comparison (Layer {layer_idx}): {len(multi_saved_files)} files")
-                    
-                    except ImportError:
-                        print("  ⚠ Multi-domain comparison not available")
-                    except Exception as e:
-                        print(f"  ⚠ Multi-domain comparison failed: {e}")
-            else:
-                # 单领域格式
-                branch1_attn = fourier_attention_data.get('attention_branch_1')
-                branch2_attn = fourier_attention_data.get('attention_branch_2')
-                adaptive_weights = fourier_attention_data.get('adaptive_weights')
-                
-                if branch1_attn is not None and branch2_attn is not None:
-                    domain_info = {'display_name': 'Single Domain', 'effective_length': 50}
-                    attention_data = {
-                        'branch1': branch1_attn,
-                        'branch2': branch2_attn,
-                        'adaptive_weights': adaptive_weights
-                    }
-                    
-                    fig, saved_files = plot_fourier_attention_journal(
-                        attention_data, domain_info, layer_idx, step,
-                        viz_config, save_plots=args.save_publication_figs
-                    )
-                    
-                    
-                    if args.use_swanlab:
-                        if swanlab.get_run() is not None:
-                            swanlab.log({
-                                f"enhanced_fourier_attention/layer_{layer_idx}": swanlab.Image(fig)
-                            }, step=step)
-                    
-                    plt.close(fig)
-                    
-                    if saved_files:
-                        print(f"  Enhanced Fourier attention (Layer {layer_idx}): {len(saved_files)} files")
-        
-    except Exception as e:
-        print(f"⚠ Enhanced Fourier attention failed: {e}")
-
 def setup_matplotlib():
     """Setup matplotlib for non-interactive use to prevent tkinter errors"""
     matplotlib.use('Agg')  # Use non-interactive backend
@@ -318,19 +190,21 @@ def check_rating_strategy_compatibility(args):
     """
     检查增强Rating策略与其他功能的兼容性，并提供优化建议
     """
-    rating_strategy = getattr(args, 'rating_strategy', 'simple')
+    rating_strategy = getattr(args, 'rating_strategy', 'temporal_fourier')
     
-    # 当前实现已简化，fourier策略与专业化机制兼容
-    if rating_strategy == 'fourier':
-        print(f"✅ Using Fourier rating strategy with simplified gating integration.")
-        print(f"   This strategy is compatible with expert specialization mechanisms.")
-    elif rating_strategy not in ['simple', 'legacy', 'fourier']:
+    # 当前实现只支持temporal_fourier策略
+    if rating_strategy == 'temporal_fourier':
+        print(f"✅ Using optimized temporal-frequency rating strategy.")
+        print(f"   This strategy uses learnable frequency cutoff and unified domain processing.")
+    elif rating_strategy in ['simple', 'legacy']:
+        print(f"✅ Using simple rating strategy for backward compatibility.")
+    else:
         print(f"⚠️  WARNING: Rating strategy '{rating_strategy}' is not supported in current implementation.")
-        print(f"   Supported strategies: 'simple', 'legacy', 'fourier'")
-        print(f"   Falling back to 'fourier' strategy.")
-        args.rating_strategy = 'fourier'
+        print(f"   Supported strategies: 'simple', 'legacy', 'temporal_fourier'")
+        print(f"   Falling back to 'temporal_fourier' strategy.")
+        args.rating_strategy = 'temporal_fourier'
     
-    return args  # Fix: Return the args object
+    return args
     
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -353,40 +227,24 @@ def parse_args():
     parser.add_argument('--use_moe', default=True, type=str2bool, help='Enable/Disable MoE')
     parser.add_argument('--use_datasets', nargs='+', default=['beauty_5_5', 'games_5_5', 'ml-1m_5_5'], help='Datasets to use for multi-domain training')
     parser.add_argument('--use_domain_info', default=True, type=str2bool, help='Use domain info in MoE gating')
-    parser.add_argument('--use_context', default=False, type=str2bool, help='Use context information in MoE gating')
     parser.add_argument('--use_rating_emb', default=True, type=str2bool, help='Use rating embedding to inform gating')
     parser.add_argument('--use_gated_fusion', default=True, type=str2bool, help='Use a gated mechanism to fuse rating embedding')
     parser.add_argument('--rating_pos_emb', default=False, type=str2bool, help='Add positional embedding to rating embeddings')
-    parser.add_argument('--rating_strategy', default='fourier', type=str, 
-                       choices=['simple', 'legacy', 'fourier'],
-                       help='Strategy for rating information modeling: simple/legacy (backward compatibility), fourier (Fourier-based long/short-term feature extraction)')
-    
-    # 自适应配置参数
-    parser.add_argument('--use_adaptive_rating_config', default=True, type=str2bool,
-                       help='Enable adaptive rating configuration based on dataset characteristics')
-    
-    # 手动配置参数（当策略为fourier且自适应配置关闭时使用）
-    parser.add_argument('--rating_num_frequencies', default=12, type=int, 
-                       help='Number of frequency components for Fourier rating encoding (used when adaptive config disabled)')
-    parser.add_argument('--rating_branch1_heads', default=1, type=int,
-                       help='Number of attention heads for rating branch 1 (used when adaptive config disabled)')
-    parser.add_argument('--rating_branch2_heads', default=1, type=int,
-                       help='Number of attention heads for rating branch 2 (used when adaptive config disabled)')
+    parser.add_argument('--rating_strategy', default='temporal_fourier', type=str, 
+                       choices=['simple', 'legacy', 'temporal_fourier'],
+                       help='Strategy for rating information modeling: simple/legacy (backward compatibility), temporal_fourier (Optimized temporal-frequency domain feature extraction)')
+    # temporal_fourier strategy uses learnable parameters, no manual config needed
     parser.add_argument('--moe_num_experts', default=4, type=int, help='Number of experts in MoE')
     parser.add_argument('--moe_k', default=2, type=int, help='Number of experts to use for each token')
     parser.add_argument('--moe_noisy_gating', default=True, type=str2bool, help='Use noisy gating in MoE')
     parser.add_argument('--moe_routing_strategy', default='shared_base', type=str, choices=['vanilla', 'shared_base'], help='MoE routing strategy')
     parser.add_argument('--moe_load_balancing', default=True, type=str2bool, help='Use load balancing in MoE')
     parser.add_argument('--moe_balance_loss_weight', default=0.01, type=float, help='Weight for MoE load balancing loss')
-    parser.add_argument('--gate_temperature', default=1.0, type=float, help='Initial temperature for gate softmax')
-    parser.add_argument('--min_gate_temperature', default=0.1, type=float, help='Minimum temperature for gate softmax')
-    parser.add_argument('--temperature_decay', default=0.995, type=float, help='Temperature decay rate per step')
     parser.add_argument('--use_specialization_loss', default=True, type=str2bool, help='Enable specialization loss for expert specialization')
     parser.add_argument('--specialization_weight', default=0.01, type=float, help='Weight for specialization loss')
     parser.add_argument('--use_contrastive_loss', default=True, type=str2bool, help='Enable contrastive learning for expert specialization')
     parser.add_argument('--contrastive_weight', default=0.01, type=float, help='Weight for contrastive loss')
-    parser.add_argument('--use_adaptive_balance', default=False, type=str2bool, help='Use adaptive load balancing based on specialization')
-    parser.add_argument('--visualize', default=True, type=str2bool, help='Enable visualization of expert usage')
+    parser.add_argument('--visualize', default=False, type=str2bool, help='Enable visualization of expert usage')
     parser.add_argument('--log_freq', default=100, type=int, help='Frequency of logging visualizations (in steps)')
     parser.add_argument('--tsne_log_freq', default=1, type=int, help='Frequency of logging t-SNE plots (in epochs) - DEPRECATED: now using performance-based triggering')
     parser.add_argument('--viz_on_improvement', default=True, type=str2bool, help='Only generate visualizations when model performance improves')
@@ -412,11 +270,6 @@ def parse_args():
     
     return args
 
-# log_fourier_rating_detailed_heatmap function removed - using enhanced visualization only
-# _log_single_domain_fourier_attention function removed - using enhanced visualization only
-# log_domain_expert_heatmap function removed - using enhanced visualization only
-# log_tsne_expert_specialization function removed - using enhanced visualization only
-# log_multi_domain_fourier_comparison function removed - using enhanced visualization only
 def main():
     # Setup matplotlib early to prevent tkinter issues
     setup_matplotlib()
@@ -571,18 +424,9 @@ def main():
     best_test_ndcg = 0.0
     T = 0.0
     
-    # 初始化领域配置管理器用于自适应可视化
-    domain_config_manager = None
-    if args.visualize:
-        try:
-            from keys.domain_config import create_domain_config
-            domain_config_manager = create_domain_config()
-            print(f"🔧 Initialized domain-aware adaptive visualization for {len(args.use_datasets)} domains")
-            print(f"   Domains: {', '.join(args.use_datasets)}")
-        except Exception as e:
-            print(f"⚠️  Failed to load domain config for visualization: {e}")
-            print("   Falling back to default visualization")
-            domain_config_manager = None
+    # Simplified visualization setup - no domain-specific configuration needed
+    print(f"🔧 Initialized unified visualization for {len(args.use_datasets)} domains")
+    print(f"   Domains: {', '.join(args.use_datasets)}")
     
     t0 = time.time()
     for epoch in range(epoch_start_idx, args.num_epochs + 1):

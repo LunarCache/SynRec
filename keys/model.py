@@ -3,7 +3,7 @@ import torch
 # --- MoE Integration: Import the new SASRec-specific MoE FFN ---
 
 from keys.c_moe import PointWiseFeedForward
-from keys.rating_modules import EnhancedRatingModule
+from keys.temporal_rating_modules import TemporalEnhancedRatingModule
 
 # --- End MoE Integration ---
 
@@ -21,22 +21,22 @@ class HAGMRec(torch.nn.Module):
         self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
         self.pos_emb = torch.nn.Embedding(args.maxlen+1, args.hidden_units, padding_idx=0)
         
-        # Enhanced Rating Module - replaces simple rating embedding
+        # Enhanced Rating Module - uses optimized temporal-frequency encoder
         if getattr(args, 'use_rating_emb', False):
-            rating_strategy = getattr(args, 'rating_strategy', 'fourier')  # default to fourier
+            rating_strategy = getattr(args, 'rating_strategy', 'temporal_fourier')  # default to temporal_fourier
             self.rating_strategy = rating_strategy  # Store for forward pass logic
             
-            if rating_strategy not in ['simple', 'legacy']:
-                # Create enhanced rating module for sophisticated strategies
-                self.enhanced_rating_module = EnhancedRatingModule(
+            if rating_strategy == 'temporal_fourier':
+                # Use the optimized temporal-frequency rating encoder
+                self.enhanced_rating_module = TemporalEnhancedRatingModule(
                     args.hidden_units, 
                     rating_strategy=rating_strategy, 
                     dropout_rate=args.dropout_rate,
-                    args=args  # Pass args for parameter extraction
+                    args=args
                 )
-            
-            # Always keep the old rating_emb for backward compatibility and simple strategies
-            self.rating_emb = torch.nn.Embedding(6, args.hidden_units, padding_idx=0)
+            else:
+                # Fallback for simple/legacy strategies
+                self.rating_emb = torch.nn.Embedding(6, args.hidden_units, padding_idx=0)
         
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
@@ -101,25 +101,14 @@ class HAGMRec(torch.nn.Module):
             original_seqs = seqs  # Save original input for residual connection
             normalized_seqs = self.forward_layernorms[i](seqs)
             
-            # --- Sequence-Aware Gating MODIFICATION ---
-            global_context_vector = None
-            if hasattr(self.forward_layers[i], 'use_moe') and self.forward_layers[i].use_moe:
-                if getattr(self.args, 'use_context', False):
-                    # Use simple mean pooling for global context (more efficient than separate attention)
-                    # This provides global context information for MoE gating without redundant computation
-                    global_context_vector_mean = normalized_seqs.mean(dim=1) # (batch, hidden)
-                    # Expand to match sequence length for the MoE layer
-                    global_context_vector = global_context_vector_mean.unsqueeze(1).expand(-1, tl, -1)
-
-
             # --- Enhanced Rating-Aware Gating ---
             rating_embedding = None
             rating_extra_info = {}
             if getattr(self.args, 'use_rating_emb', False) and rating_seqs is not None:
-                rating_strategy = getattr(self, 'rating_strategy', 'simple')
+                rating_strategy = getattr(self, 'rating_strategy', 'temporal_fourier')
                 
-                if rating_strategy not in ['simple', 'legacy']:
-                    # Use enhanced rating module for sophisticated rating modeling
+                if rating_strategy == 'temporal_fourier':
+                    # Use optimized temporal-frequency rating encoder
                     enhanced_rating_repr, rating_extra_info = self.enhanced_rating_module(rating_seqs, domain_ids)
                     
                     # Add positional embedding if enabled (for compatibility)
@@ -128,15 +117,13 @@ class HAGMRec(torch.nn.Module):
                     
                     rating_embedding = enhanced_rating_repr
                     
-                    # Store extra information for potential visualization/analysis
-                    if 'attention_weights' in rating_extra_info:
-                        # Store detailed Fourier attention for enhanced visualization
-                        if 'fourier_rating_attention_detailed' not in total_viz_data:
-                            total_viz_data['fourier_rating_attention_detailed'] = [None] * len(self.attention_layers)
+                    # Store frequency analysis info for visualization
+                    if 'frequency_analysis' in rating_extra_info:
+                        if 'temporal_frequency_analysis' not in total_viz_data:
+                            total_viz_data['temporal_frequency_analysis'] = [None] * len(self.attention_layers)
                         
-                        # Extract multi-scale attention weights from Fourier rating encoder
-                        fourier_attn_weights = rating_extra_info['attention_weights']
-                        total_viz_data['fourier_rating_attention_detailed'][i] = fourier_attn_weights
+                        freq_analysis = rating_extra_info['frequency_analysis']
+                        total_viz_data['temporal_frequency_analysis'][i] = freq_analysis
                 else:
                     # Use traditional simple rating embedding for backward compatibility
                     rating_embedding = self.rating_emb(rating_seqs)
@@ -146,7 +133,7 @@ class HAGMRec(torch.nn.Module):
 
             # Pass all relevant information to the FFN/MoE layer
             ffn_output, moe_loss_dict_layer, viz_data_layer = self.forward_layers[i](
-                normalized_seqs, seqs, domain_ids, global_context_vector, rating_embedding,
+                normalized_seqs, seqs, domain_ids, rating_embedding,
             )
             
             if hasattr(self.forward_layers[i], 'use_moe') and self.forward_layers[i].use_moe:

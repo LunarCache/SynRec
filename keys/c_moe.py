@@ -18,10 +18,10 @@ class PointWiseFeedForward(torch.nn.Module):
             self.conv2 = torch.nn.Conv1d(hidden_units, hidden_units, kernel_size=1)
             self.dropout2 = torch.nn.Dropout(p=dropout_rate)
 
-    def forward(self, inputs, log_feats, domain_ids=None, global_context_vector=None, rating_embedding=None):
+    def forward(self, inputs, log_feats, domain_ids=None, rating_embedding=None):
         if self.use_moe:
             # Our new MoE FFN handles everything internally
-            return self.moe_ffn(inputs, log_feats, domain_ids, global_context_vector, rating_embedding)
+            return self.moe_ffn(inputs, log_feats, domain_ids, rating_embedding)
         else:
             # Original FFN logic
             outputs = self.dropout2(self.conv2(self.relu(self.dropout1(self.conv1(inputs.transpose(-1, -2))))))
@@ -94,19 +94,11 @@ class HAGMoEFFN(nn.Module):
             self.balance_loss_weight = getattr(args, 'moe_balance_loss_weight')
         
         # --- Expert Specialization Optimization ---
-        self.use_temperature_gating = getattr(args, 'gate_temperature', 1.0) != 1.0
-        self.initial_temperature = getattr(args, 'gate_temperature', 1.0)
-        self.min_temperature = getattr(args, 'min_gate_temperature', 0.1)
-        self.temperature_decay = getattr(args, 'temperature_decay', 0.995)
-        self.current_temperature = self.initial_temperature
-        
         self.use_specialization_loss = getattr(args, 'use_specialization_loss', False)
         self.specialization_weight = getattr(args, 'specialization_weight', 0.1)
         
         self.use_contrastive_loss = getattr(args, 'use_contrastive_loss', False)
         self.contrastive_weight = getattr(args, 'contrastive_weight', 0.05)
-        
-        self.use_adaptive_balance = getattr(args, 'use_adaptive_balance', False)
 
     def _create_expert(self, hidden_units, args):
         # MLP expert with Swish activation (better for Transformer architectures)
@@ -182,22 +174,7 @@ class HAGMoEFFN(nn.Module):
         
         return contrastive_loss
     
-    def compute_adaptive_balance_weight(self, gate_scores, domain_ids):
-        """根据专业化程度自适应调整负载均衡权重"""
-        if domain_ids is None or not self.use_adaptive_balance:
-            return self.balance_loss_weight
-        
-        # 计算专业化程度（熵的倒数）
-        gate_entropy = -(gate_scores * torch.log(gate_scores + 1e-8)).sum(dim=-1).mean()
-        max_entropy = torch.log(torch.tensor(self.num_domain_experts, dtype=torch.float, device=gate_scores.device))
-        specialization_score = 1.0 - (gate_entropy / max_entropy)
-        
-        # 专业化程度越高，负载均衡权重越小
-        adaptive_weight = self.balance_loss_weight * (1.0 - specialization_score.clamp(0, 0.8))
-        return adaptive_weight
-
-    
-    def forward(self, inputs, log_feats, domain_ids=None, global_context_vector=None, rating_embedding=None):
+    def forward(self, inputs, log_feats, domain_ids=None, rating_embedding=None):
         if domain_ids is not None and isinstance(domain_ids, np.ndarray):
             domain_ids = torch.LongTensor(domain_ids).to(inputs.device)
             
@@ -214,10 +191,6 @@ class HAGMoEFFN(nn.Module):
             gate_input = gate_input + self.domain_transform(domain_emb_expanded) + domain_emb_expanded
         # B. Construct Content Input (for expert processing)
         content_input = inputs_flat
-
-        if global_context_vector is not None:
-            context_flat = global_context_vector.reshape(-1, self.hidden_units) if global_context_vector.dim() == 3 else global_context_vector.unsqueeze(1).expand(-1, seq_len, -1).reshape(-1, self.hidden_units)
-            gate_input = gate_input + context_flat
 
         # Enhanced Rating-Aware Gating (简化版)
         if getattr(self.args, 'use_gated_fusion', False) and rating_embedding is not None:
@@ -246,19 +219,9 @@ class HAGMoEFFN(nn.Module):
             # 2.1. 共享专家输出 (平均)
             shared_output = torch.stack(shared_expert_outputs_list, dim=0).mean(dim=0)
 
-            # 2.2. 门控仅对领域专家生效（加入温度调节）
+            # 2.2. 门控仅对领域专家生效
             gate_logits = self.gate(gate_input)
-            
-            # 应用温度调节
-            if self.use_temperature_gating and self.training:
-                gate_scores = F.softmax(gate_logits / self.current_temperature, dim=-1)
-                # 更新温度
-                self.current_temperature = max(
-                    self.min_temperature, 
-                    self.current_temperature * self.temperature_decay
-                )
-            else:
-                gate_scores = F.softmax(gate_logits, dim=-1)
+            gate_scores = F.softmax(gate_logits, dim=-1)
             
             # (batch*seq, num_domain_experts)
 
@@ -288,17 +251,11 @@ class HAGMoEFFN(nn.Module):
                     contrast_loss = self.compute_contrastive_loss(output, domain_ids)
                     loss_dict['contrastive'] = self.contrastive_weight * contrast_loss
                 
-                # 负载均衡（可能根据专业化程度自适应调整）
+                # 负载均衡
                 if self.load_balancing:
                     expert_usage = gate_scores.sum(dim=0)
                     expert_load = expert_usage / (expert_usage.sum() + 1e-8)
-                    
-                    if self.use_adaptive_balance:
-                        adaptive_weight = self.compute_adaptive_balance_weight(gate_scores, domain_ids)
-                        lb_loss = adaptive_weight * self.cv_squared(expert_load) * self.num_domain_experts
-                    else:
-                        lb_loss = self.balance_loss_weight * self.cv_squared(expert_load) * self.num_domain_experts
-                    
+                    lb_loss = self.balance_loss_weight * self.cv_squared(expert_load) * self.num_domain_experts
                     loss_dict['load_balancing'] = lb_loss
             
             if (self.load_balancing or self.args.visualize) and self.training:
@@ -323,19 +280,9 @@ class HAGMoEFFN(nn.Module):
                     viz_data['tsne_domains'] = token_domain_ids.detach()
 
         else: # 'vanilla' 策略
-            # --- 原有策略: 从所有专家中选择 Top-K （加入温度调节）---
+            # --- 原有策略: 从所有专家中选择 Top-K ---
             gate_logits = self.gate(gate_input)
-            
-            # 应用温度调节
-            if self.use_temperature_gating and self.training:
-                gate_scores = F.softmax(gate_logits / self.current_temperature, dim=-1)
-                # 更新温度（与shared_base策略共享温度参数）
-                self.current_temperature = max(
-                    self.min_temperature, 
-                    self.current_temperature * self.temperature_decay
-                )
-            else:
-                gate_scores = F.softmax(gate_logits, dim=-1)
+            gate_scores = F.softmax(gate_logits, dim=-1)
             
             if self.k >= self.num_experts:
                 top_k_scores, top_k_indices = gate_scores, torch.arange(self.num_experts, device=gate_scores.device).expand(gate_scores.size(0), -1)
