@@ -188,14 +188,6 @@ class OptimizedFourierRatingEncoder(nn.Module):
             'long_term_attention': long_term_attn,
             'short_term_attention': short_term_attn, 
             'fusion_weights': fusion_weights,
-            'frequency_masks': {
-                'low_freq_mask': low_freq_mask,
-                'high_freq_mask': high_freq_mask
-            },
-            'signal_power': {
-                'long_term_power': torch.mean(long_term_signal ** 2).item(),
-                'short_term_power': torch.mean(short_term_signal ** 2).item()
-            },
             # 为可视化添加的数据，与简化后的plot_multi_domain_fourier_comparison_journal兼容
             'visualization_data': {
                 'adaptive_weights': fusion_weights  # 只保留自适应权重用于可视化
@@ -289,21 +281,6 @@ class OptimizedFourierRatingEncoder(nn.Module):
             high_freq_mask = 1.0 - low_freq_mask
         
         return low_freq_mask, high_freq_mask, current_cutoff
-    
-    def get_frequency_analysis(self, rating_seq):
-        """获取详细的频域分析"""
-        with torch.no_grad():
-            enhanced_repr, analysis_info = self.forward(rating_seq)
-            
-            return {
-                'enhanced_representation': enhanced_repr,
-                'frequency_analysis': analysis_info,
-                'model_params': {
-                    'cutoff_ratio': analysis_info['cutoff_frequency'],
-                    'learnable_cutoff': self.learnable_cutoff,
-                    'boundary_sharpness': self.boundary_sharpness.item() if self.learnable_cutoff else None
-                }
-            }
 
 
 class TemporalEnhancedRatingModule(nn.Module):

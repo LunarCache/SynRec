@@ -6,37 +6,14 @@ from tqdm import tqdm
 from keys.model import HAGMRec
 from keys.utils import *
 import random
-# TensorBoard removed - using only SwanLab for logging
 import swanlab
 import threading
-# Set matplotlib backend before importing pyplot
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-import seaborn as sns
-from sklearn.manifold import TSNE
 import numpy as np
 from collections import OrderedDict, defaultdict
 
-# Import enhanced visualization modules
-try:
-    from visualization import (
-        VisualizationConfig,
-        EnhancedVisualization,
-        plot_fourier_attention_journal,
-        plot_expert_routing_journal,
-        plot_tsne_specialization_journal,
-        export_figure_journal,
-        create_journal_config,
-        apply_journal_style
-    )
-    ENHANCED_VIZ_AVAILABLE = True
-    print("✓ Enhanced visualization modules loaded successfully")
-except ImportError as e:
-    ENHANCED_VIZ_AVAILABLE = False
-    print(f"⚠ Enhanced visualization not available: {e}")
-    print("  Falling back to original visualization functions")
+# Visualization modules removed - using only SwanLab for training monitoring
+# Enhanced visualization available in scripts/inference_visualization.py for inference analysis
+ENHANCED_VIZ_AVAILABLE = False
 
 # ANSI color codes for terminal output
 RESET = "\033[0m"
@@ -49,127 +26,6 @@ MAGENTA = "\033[95m"
 CYAN = "\033[96m"
 
 
-def setup_enhanced_visualization(args):
-    """设置增强可视化系统"""
-    if not ENHANCED_VIZ_AVAILABLE:
-        return None
-    
-    try:
-        # 创建期刊特定的配置
-        config = create_journal_config(args.journal_style)
-        config.dpi = args.viz_dpi
-        config.figure_format = args.viz_format
-        config.save_formats = [args.viz_format, 'png'] if args.save_publication_figs else [args.viz_format]
-        config.output_directory = os.path.join('exp', args.train_dir, 'enhanced_figures')
-        
-        # 应用期刊样式
-        apply_journal_style(args.journal_style)
-        
-        print(f"✓ Enhanced visualization configured for {args.journal_style} journal style")
-        print(f"  DPI: {config.dpi}, Format: {config.figure_format}")
-        print(f"  Output: {config.output_directory}")
-        
-        return config
-    except Exception as e:
-        print(f"⚠ Failed to setup enhanced visualization: {e}")
-        return None
-
-def log_enhanced_expert_routing(writer, step, data, domain_map, strategy, args, viz_config=None):
-    """增强的专家路由可视化"""
-    # writer参数保留兼容性，但已不使用（TensorBoard已移除）
-    if not ENHANCED_VIZ_AVAILABLE or viz_config is None:
-        print(f"⚠️ Enhanced visualization not available - expert routing visualization skipped")
-        return
-    
-    try:
-        # 准备标签
-        domain_labels = []
-        for i in range(len(data)):
-            raw_dataset_name = domain_map.get(i, f"Unknown Domain {i}")
-            # 规范化领域名称
-            if not raw_dataset_name.startswith("Unknown Domain"):
-                try:
-                    from visualization.enhanced_plots import _normalize_domain_name
-                    normalized_name = _normalize_domain_name(raw_dataset_name)
-                    domain_labels.append(normalized_name)
-                except ImportError:
-                    domain_labels.append(raw_dataset_name)
-            else:
-                domain_labels.append(raw_dataset_name)
-        
-        if strategy == 'shared_base':
-            expert_labels = [f"Expert {i}" for i in range(len(data[0]))]
-        else:
-            num_shared = 1 if len(data[0]) > len(domain_map) else 0
-            expert_labels = []
-            for i in range(len(data[0])):
-                if i < num_shared:
-                    expert_labels.append(f"Shared Expert {i}")
-                else:
-                    expert_labels.append(f"Domain Expert {i-num_shared}")
-        
-        # 使用增强可视化
-        fig, saved_files = plot_expert_routing_journal(
-            data, domain_labels, expert_labels, step, viz_config, save_plots=args.save_publication_figs
-        )
-        
-        # TensorBoard removed - only using SwanLab
-        
-        # 记录到SwanLab
-        if args.use_swanlab:
-            if swanlab.get_run() is not None:
-                swanlab.log({
-                    "enhanced_expert_routing/heatmap": swanlab.Image(fig)
-                }, step=step)
-        
-        plt.close(fig)
-        
-        if saved_files:
-            print(f"  Enhanced expert routing saved: {len(saved_files)} files")
-            
-    except Exception as e:
-        print(f"⚠ Enhanced expert routing failed: {e}")
-
-def log_enhanced_tsne_specialization(writer, step, embeddings, labels, domains, domain_map, args, viz_config=None):
-    """增强的t-SNE专业化可视化"""
-    # writer参数保留兼容性，但已不使用（TensorBoard已移除）
-    if not ENHANCED_VIZ_AVAILABLE or viz_config is None:
-        print(f"⚠️ Enhanced visualization not available - t-SNE visualization skipped")
-        return
-    
-    try:
-        # 使用增强可视化
-        fig, saved_files = plot_tsne_specialization_journal(
-            embeddings, labels, domains, domain_map, step, viz_config, 
-            save_plots=args.save_publication_figs,
-            tsne_params={'perplexity': min(30, len(embeddings)//4)}
-        )
-        
-        # TensorBoard removed - only using SwanLab
-        
-        # 记录到SwanLab
-        if args.use_swanlab:
-            if swanlab.get_run() is not None:
-                swanlab.log({
-                    "enhanced_tsne_specialization/plot": swanlab.Image(fig)
-                }, step=step)
-        
-        plt.close(fig)
-        
-        if saved_files:
-            print(f"  Enhanced t-SNE specialization saved: {len(saved_files)} files")
-            
-    except Exception as e:
-        print(f"⚠ Enhanced t-SNE failed: {e}")
-
-def setup_matplotlib():
-    """Setup matplotlib for non-interactive use to prevent tkinter errors"""
-    matplotlib.use('Agg')  # Use non-interactive backend
-    plt.ioff()  # Turn off interactive mode
-    # Set additional rcParams to prevent GUI-related errors
-    import matplotlib as mpl
-    mpl.rcParams['backend'] = 'Agg'
-    mpl.rcParams['figure.max_open_warning'] = 0
 
 def set_seed(seed):
     random.seed(seed)
@@ -244,22 +100,7 @@ def parse_args():
     parser.add_argument('--specialization_weight', default=0.01, type=float, help='Weight for specialization loss')
     parser.add_argument('--use_contrastive_loss', default=True, type=str2bool, help='Enable contrastive learning for expert specialization')
     parser.add_argument('--contrastive_weight', default=0.01, type=float, help='Weight for contrastive loss')
-    parser.add_argument('--visualize', default=True, type=str2bool, help='Enable visualization of expert usage')
-    parser.add_argument('--log_freq', default=100, type=int, help='Frequency of logging visualizations (in steps)')
-    parser.add_argument('--tsne_log_freq', default=1, type=int, help='Frequency of logging t-SNE plots (in epochs) - DEPRECATED: now using performance-based triggering')
-    parser.add_argument('--viz_on_improvement', default=True, type=str2bool, help='Only generate visualizations when model performance improves')
-    parser.add_argument('--viz_force_epochs', default=[], type=lambda x: [int(i) for i in x.split(',')] if x else [], help='Force visualization on specific epochs (comma-separated), regardless of performance')
-    parser.add_argument('--tsne_sample_size', default=512, type=int, help='Number of points to sample for t-SNE plot')
-    # Enhanced visualization parameters
-    parser.add_argument('--journal_style', default='custom', type=str, 
-                       choices=['nature', 'science', 'cell', 'high_quality', 'custom'],
-                       help='Journal style for enhanced visualizations')
-    parser.add_argument('--viz_dpi', default=300, type=int, help='DPI for visualization outputs')
-    parser.add_argument('--viz_format', default='png', type=str, 
-                       choices=['pdf', 'png', 'svg', 'eps'],
-                       help='Primary format for visualization exports')
-    parser.add_argument('--save_publication_figs', default=False, type=str2bool,
-                       help='Save publication-quality figures using enhanced visualization')
+    parser.add_argument('--visualize', default=False, type=str2bool, help='Enable data collection for visualization (used by scripts)')
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for data loading.')
     parser.add_argument('--swanlab_project', type=str, default='HAGMRec', help='SwanLab project name')
     parser.add_argument('--use_swanlab', default=True, type=str2bool, help='Enable/Disable SwanLab')
@@ -271,18 +112,10 @@ def parse_args():
     return args
 
 def main():
-    # Setup matplotlib early to prevent tkinter issues
-    setup_matplotlib()
-    
     args = parse_args()
     # Set the seed for the entire environment
     if args.seed is not None:
         set_seed(args.seed)
-
-    # Initialize enhanced visualization
-    enhanced_viz_config = setup_enhanced_visualization(args)
-    if enhanced_viz_config:
-        print(f"📊 Enhanced visualization enabled with {args.journal_style} style")
     
     # Initialize SwanLab
     if args.use_swanlab:
@@ -424,16 +257,13 @@ def main():
     best_test_ndcg = 0.0
     T = 0.0
     
-    # Simplified visualization setup - no domain-specific configuration needed
-    print(f"🔧 Initialized unified visualization for {len(args.use_datasets)} domains")
-    print(f"   Domains: {', '.join(args.use_datasets)}")
+    # Simplified visualization setup - data collection preserved for scripts
+    print(f"🔧 Training mode: basic SwanLab monitoring only")
+    print(f"   Enhanced visualization available via scripts/inference_visualization.py")
     
     t0 = time.time()
     for epoch in range(epoch_start_idx, args.num_epochs + 1):
         if args.inference_only: break # just to decrease identition
-        
-        epoch_domain_expert_load = None
-        epoch_viz_step_count = 0
         
         pbar = tqdm(train_loader, desc=f"{BOLD}{BLUE}Epoch {epoch}/{args.num_epochs}{RESET}", colour='blue')
         for step, (u, seq, rating_seq, pos, neg, domain_id) in enumerate(pbar):
@@ -467,38 +297,27 @@ def main():
             postfix_data['loss'] = f"{BOLD}{BLUE}{loss.item():.4f}{RESET}"
             pbar.set_postfix(postfix_data)
 
+            # SwanLab basic training monitoring
             if args.use_swanlab:
                 log_data = {
                     'train/loss': loss.item(),
                     'train/bpr_loss': bpr_loss.item(),
                     'learning_rate': adam_optimizer.param_groups[0]['lr']
                 }
-                for k, v_val in moe_loss_dict.items(): # Renamed v to v_val
+                for k, v_val in moe_loss_dict.items():
                     if torch.is_tensor(v_val):
                         log_data[f'train/{k}'] = v_val.item()
-                # Calculate global step for SwanLab
-                swanlab_global_step = (epoch - 1) * len(train_loader) + step
-                if args.use_swanlab:
-                    if swanlab.get_run() is not None:
-                        swanlab.log(log_data, step=swanlab_global_step)
-            
-            if args.visualize:
-                if 'domain_expert_load' in viz_data:
-                    if epoch_domain_expert_load is None:
-                        epoch_domain_expert_load = viz_data['domain_expert_load'].clone()
-                    else:
-                        epoch_domain_expert_load += viz_data['domain_expert_load']
-                    epoch_viz_step_count += 1
-                
-                # Rating attention weights will be processed only at epoch level to reduce overhead
-                
-                # Log expert load scalars at step level (keeping this for training monitoring)
-                if step % args.log_freq == 0 and 'expert_load' in viz_data:
-                    global_step = (epoch - 1) * len(train_loader) + step
+                        
+                # Expert load monitoring for SwanLab (basic metrics only)
+                if 'expert_load' in viz_data:
                     expert_load = viz_data['expert_load']
-                    if args.use_swanlab:
-                        if swanlab.get_run() is not None:
-                            swanlab.log({f'train_expert_load/Domain_{domain_map[i]}' if args.moe_routing_strategy == 'shared_base' else f'train_expert_load/Expert_{i}': val.item() for i, val in enumerate(expert_load)}, step=global_step)
+                    for i, val in enumerate(expert_load):
+                        load_key = f'train_expert_load/Domain_{domain_map[i]}' if args.moe_routing_strategy == 'shared_base' else f'train_expert_load/Expert_{i}'
+                        log_data[load_key] = val.item()
+                
+                swanlab_global_step = (epoch - 1) * len(train_loader) + step
+                if swanlab.get_run() is not None:
+                    swanlab.log(log_data, step=swanlab_global_step)
 
 
         if epoch % 1 == 0:
@@ -565,120 +384,7 @@ def main():
 
             performance_improved = t_test['overall_NDCG@10'] > best_test_ndcg   
             
-            # 可视化触发逻辑：性能提升 或 强制epochs 或 传统频率模式 (向后兼容)
-            if args.visualize:
-                if args.viz_on_improvement:
-                    should_visualize_now = performance_improved or epoch in args.viz_force_epochs or epoch == 1
-                    if should_visualize_now:
-                        if epoch == 1:
-                            print(f"🎨 Triggering visualization - First epoch baseline")
-                        elif performance_improved:
-                            print(f"🎨 Triggering visualization - Performance improved")
-                        else:
-                            print(f"🎨 Triggering visualization - Forced epoch {epoch}")
-                            
-                        # 立即执行可视化
-                        if 'tsne_embeddings' in viz_data:
-                            log_enhanced_tsne_specialization(
-                                None, epoch,
-                                viz_data['tsne_embeddings'],
-                                viz_data['tsne_labels'],
-                                viz_data['tsne_domains'],
-                                domain_map,
-                                args, 
-                                enhanced_viz_config
-                            )
-
-                        if epoch_domain_expert_load is not None and epoch_viz_step_count > 0:
-                            avg_domain_expert_load = epoch_domain_expert_load / epoch_viz_step_count
-                            log_enhanced_expert_routing(
-                                None, epoch, avg_domain_expert_load, 
-                                domain_map, args.moe_routing_strategy, args, enhanced_viz_config
-                            )
-                        
-                        # 直接调用多领域Fourier可视化
-                        if 'fourier_rating_attention_detailed' in viz_data:
-                            fourier_detailed = viz_data['fourier_rating_attention_detailed']
-                            for layer_idx, fourier_attn_data in enumerate(fourier_detailed):
-                                if fourier_attn_data is not None and len(fourier_attn_data) > 1:
-                                    try:
-                                        from visualization import plot_multi_domain_fourier_comparison_journal
-                                        
-                                        multi_fig, multi_saved_files = plot_multi_domain_fourier_comparison_journal(
-                                            fourier_attn_data, domain_map, layer_idx, epoch,
-                                            enhanced_viz_config, save_plots=args.save_publication_figs
-                                        )
-                                        
-                                        if args.use_swanlab:
-                                            if swanlab.get_run() is not None:
-                                                swanlab.log({
-                                                    f"enhanced_multi_domain_adaptive_weights/layer_{layer_idx}": swanlab.Image(multi_fig)
-                                                }, step=epoch)
-                                        
-                                        plt.close(multi_fig)
-                                        
-                                        if multi_saved_files:
-                                            print(f"  Enhanced Multi-Domain Fourier (Layer {layer_idx}): {len(multi_saved_files)} files")
-                                    
-                                    except ImportError:
-                                        print("  ⚠ Multi-domain Fourier visualization not available")
-                                    except Exception as e:
-                                        print(f"  ⚠ Multi-domain Fourier visualization failed: {e}")
-                        
-                else:
-                    # 向后兼容：使用传统频率模式
-                    should_visualize_now = epoch % args.tsne_log_freq == 0
-                    if should_visualize_now:
-                        print(f"🎨 Triggering visualization - Traditional frequency mode (epoch {epoch})")
-                        
-                        # 立即执行可视化
-                        if 'tsne_embeddings' in viz_data:
-                            log_enhanced_tsne_specialization(
-                                None, epoch,
-                                viz_data['tsne_embeddings'],
-                                viz_data['tsne_labels'],
-                                viz_data['tsne_domains'],
-                                domain_map,
-                                args, 
-                                enhanced_viz_config
-                            )
-
-                        if epoch_domain_expert_load is not None and epoch_viz_step_count > 0:
-                            avg_domain_expert_load = epoch_domain_expert_load / epoch_viz_step_count
-                            log_enhanced_expert_routing(
-                                None, epoch, avg_domain_expert_load, 
-                                domain_map, args.moe_routing_strategy, args, enhanced_viz_config
-                            )
-                        
-                        # 直接调用多领域Fourier可视化
-                        if 'fourier_rating_attention_detailed' in viz_data:
-                            fourier_detailed = viz_data['fourier_rating_attention_detailed']
-                            for layer_idx, fourier_attn_data in enumerate(fourier_detailed):
-                                if fourier_attn_data is not None and len(fourier_attn_data) > 1:
-                                    try:
-                                        from visualization import plot_multi_domain_fourier_comparison_journal
-                                        
-                                        multi_fig, multi_saved_files = plot_multi_domain_fourier_comparison_journal(
-                                            fourier_attn_data, domain_map, layer_idx, epoch,
-                                            enhanced_viz_config, save_plots=args.save_publication_figs
-                                        )
-                                        
-                                        if args.use_swanlab:
-                                            if swanlab.get_run() is not None:
-                                                swanlab.log({
-                                                    f"enhanced_multi_domain_adaptive_weights/layer_{layer_idx}": swanlab.Image(multi_fig)
-                                                }, step=epoch)
-                                        
-                                        plt.close(multi_fig)
-                                        
-                                        if multi_saved_files:
-                                            print(f"  Enhanced Multi-Domain Fourier (Layer {layer_idx}): {len(multi_saved_files)} files")
-                                    
-                                    except ImportError:
-                                        print("  ⚠ Multi-domain Fourier visualization not available")
-                                    except Exception as e:
-                                        print(f"  ⚠ Multi-domain Fourier visualization failed: {e}")
-            
+            # Performance improved logic simplified - only save models, no visualization
             if performance_improved:
                 best_test_ndcg = t_test['overall_NDCG@10']
                 print(f"✨ New best performance! Test NDCG@10: {best_test_ndcg:.4f}")

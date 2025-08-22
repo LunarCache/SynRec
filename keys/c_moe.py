@@ -264,6 +264,7 @@ class HAGMoEFFN(nn.Module):
                 expert_load = expert_usage / (expert_usage.sum() + 1e-8)
                 viz_data['expert_load'] = expert_load.detach()
                 
+                # Generate additional viz_data when visualization is enabled (for scripts)
                 if self.args.visualize and domain_ids is not None:
                     token_domain_ids = domain_ids.unsqueeze(1).expand(-1, seq_len).reshape(-1)
                     
@@ -311,6 +312,7 @@ class HAGMoEFFN(nn.Module):
                     lb_loss = self.balance_loss_weight * self.cv_squared(expert_load) * self.num_experts
                     loss_dict['load_balancing'] = lb_loss
 
+                # Generate additional viz_data when visualization is enabled (for scripts)
                 if self.args.visualize and domain_ids is not None:
                     token_domain_ids = domain_ids.unsqueeze(1).expand(-1, seq_len).reshape(-1)
                     domain_expert_load = torch.zeros(self.num_domain_experts, self.num_experts, device=output.device)
