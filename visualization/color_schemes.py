@@ -68,6 +68,19 @@ class JournalColorSchemes:
             'black': '#000000'
         }
         
+        # 自定义统一配色方案
+        self.custom_colors = {
+            'primary': '#8CD0C3',      # 浅薄荷绿 - Beauty领域主色
+            'secondary': '#BCB9D8',    # 淡紫色 - Games领域主色
+            'tertiary': '#F18072',     # 珊瑚色 - Movies领域主色
+            'quaternary': '#80B1D2',   # 天蓝色 - 共享专家色
+            'accent': '#F9B063',       # 橙黄色 - 注意力高值
+            'success': '#B3D46B',      # 柠檬绿 - 注意力中值
+            'warning': '#F7CBDF',      # 粉色 - 强调/错误色
+            'neutral': '#D7D7D5',      # 浅灰色 - 中性/背景色
+            'info': '#BA7FB5'          # 紫色 - 对比/焦点色
+        }
+        
         # 定义渐变色映射
         self._define_gradient_maps()
     
@@ -98,7 +111,7 @@ class JournalColorSchemes:
         获取指定期刊的调色板
         
         Args:
-            journal: 期刊名称 ('nature', 'science', 'cell')
+            journal: 期刊名称 ('nature', 'science', 'cell', 'custom')
             n_colors: 需要的颜色数量
             
         Returns:
@@ -107,7 +120,8 @@ class JournalColorSchemes:
         color_schemes = {
             'nature': self.nature_colors,
             'science': self.science_colors, 
-            'cell': self.cell_colors
+            'cell': self.cell_colors,
+            'custom': self.custom_colors
         }
         
         if journal not in color_schemes:
@@ -154,7 +168,8 @@ class JournalColorSchemes:
             'nature': 'YlOrRd',     # Nature风格：黄橙红渐变
             'science': 'RdYlBu_r',  # Science风格：红黄蓝反向
             'cell': 'coolwarm',     # Cell风格：冷暖色调
-            'classic': 'YlGnBu'     # 经典黄绿蓝
+            'classic': 'YlGnBu',    # 经典黄绿蓝
+            'custom': 'custom_heatmap'  # 自定义热力图配色
         }
         
         return heatmap_cmaps.get(style, 'YlOrRd')
@@ -172,6 +187,8 @@ class JournalColorSchemes:
         """
         if style == 'colorblind_friendly':
             colors = list(self.colorblind_friendly.values())
+        elif style == 'custom':
+            colors = list(self.custom_colors.values())
         else:
             colors = self.get_journal_palette(style, n_categories)
         
@@ -250,5 +267,76 @@ JOURNAL_PALETTES = {
         'attention_cmap': 'plasma',
         'heatmap_cmap': 'coolwarm', 
         'diverging_cmap': 'seismic'
+    },
+    'custom': {
+        'primary_colors': ['#8CD0C3', '#BCB9D8', '#F18072', '#80B1D2'],
+        'attention_cmap': 'custom_attention',
+        'heatmap_cmap': 'custom_heatmap',
+        'diverging_cmap': 'custom_diverging'
     }
 }
+
+def create_custom_colormaps():
+    """创建基于自定义配色的连续colormap"""
+    
+    # 自定义注意力图colormap: 浅薄荷绿到橙黄色
+    custom_attention_colors = ['#8CD0C3', '#B3D46B', '#F9B063']
+    custom_attention_cmap = create_custom_colormap(
+        custom_attention_colors, 'custom_attention')
+    
+    # 自定义热力图colormap: 浅灰色到珊瑚色 
+    custom_heatmap_colors = ['#D7D7D5', '#BCB9D8', '#F18072']
+    custom_heatmap_cmap = create_custom_colormap(
+        custom_heatmap_colors, 'custom_heatmap')
+    
+    # 自定义发散colormap: 天蓝色-浅灰色-紫色
+    custom_diverging_colors = ['#80B1D2', '#D7D7D5', '#BA7FB5']
+    custom_diverging_cmap = create_custom_colormap(
+        custom_diverging_colors, 'custom_diverging')
+    
+    # 注册 colormap 到 matplotlib（幂等，避免重复注册产生警告）
+    try:
+        import matplotlib.pyplot as plt
+        def _already_registered(name: str) -> bool:
+            try:
+                # matplotlib >= 3.5
+                if hasattr(plt, 'colormaps'):
+                    return name in plt.colormaps
+            except Exception:
+                pass
+            try:
+                # 兼容旧版本
+                import matplotlib.cm as cm
+                cm.get_cmap(name)
+                return True
+            except Exception:
+                return False
+
+        # 新版注册
+        if hasattr(plt, 'colormaps') and hasattr(plt.colormaps, 'register'):
+            if not _already_registered('custom_attention'):
+                plt.colormaps.register(custom_attention_cmap)
+            if not _already_registered('custom_heatmap'):
+                plt.colormaps.register(custom_heatmap_cmap)
+            if not _already_registered('custom_diverging'):
+                plt.colormaps.register(custom_diverging_cmap)
+        else:
+            # 旧版注册
+            import matplotlib.cm as cm
+            if hasattr(cm, 'register_cmap'):
+                if not _already_registered('custom_attention'):
+                    cm.register_cmap(cmap=custom_attention_cmap)
+                if not _already_registered('custom_heatmap'):
+                    cm.register_cmap(cmap=custom_heatmap_cmap)
+                if not _already_registered('custom_diverging'):
+                    cm.register_cmap(cmap=custom_diverging_cmap)
+            # 若不可注册，静默跳过，无需打印
+    except Exception:
+        # 保持静默，返回局部 colormap 对象即可
+        pass
+    
+    return {
+        'custom_attention': custom_attention_cmap,
+        'custom_heatmap': custom_heatmap_cmap,
+        'custom_diverging': custom_diverging_cmap
+    }

@@ -1,6 +1,14 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from enum import Enum
+
+
+class AblationMode(Enum):
+    """消融实验模式"""
+    FULL = "full"                # 完整模型（默认）
+    LOW_FREQ_ONLY = "low_only"   # 仅低频成分
+    HIGH_FREQ_ONLY = "high_only" # 仅高频成分
 
 
 class OptimizedFourierRatingEncoder(nn.Module):
@@ -18,7 +26,7 @@ class OptimizedFourierRatingEncoder(nn.Module):
     
     def __init__(self, hidden_units, max_len=100, cutoff_ratio=0.3, 
                  learnable_cutoff=True, attention_heads=4, 
-                 dropout_rate=0.1, use_windowing=True):
+                 dropout_rate=0.1, use_windowing=True, ablation_mode=AblationMode.FULL):
         super(OptimizedFourierRatingEncoder, self).__init__()
         
         self.hidden_units = hidden_units
@@ -26,6 +34,7 @@ class OptimizedFourierRatingEncoder(nn.Module):
         self.cutoff_ratio = cutoff_ratio
         self.learnable_cutoff = learnable_cutoff
         self.use_windowing = use_windowing
+        self.ablation_mode = ablation_mode
         
         # 1. Rating嵌入层
         self.rating_embedding = nn.Embedding(6, hidden_units, padding_idx=0)
@@ -149,11 +158,29 @@ class OptimizedFourierRatingEncoder(nn.Module):
         # 10. 自适应权重融合
         fusion_weights = self.fusion_weight_generator(fused_features)  # (B, L, 3)
         
-        final_repr = (
-            fusion_weights[..., 0:1] * rating_emb +
-            fusion_weights[..., 1:2] * long_term_enhanced +  
-            fusion_weights[..., 2:3] * short_term_enhanced
-        )
+        # 消融实验逻辑：根据模式选择性地使用不同频率成分
+        # 修复：统一使用融合权重，通过屏蔽特定组件实现消融
+        if self.ablation_mode == AblationMode.LOW_FREQ_ONLY:
+            # 仅使用低频成分：屏蔽短期分支，保留原始和长期分支
+            final_repr = (
+                fusion_weights[..., 0:1] * rating_emb +
+                fusion_weights[..., 1:2] * long_term_enhanced +  
+                torch.zeros_like(fusion_weights[..., 2:3]) * short_term_enhanced  # 短期权重设为0
+            )
+        elif self.ablation_mode == AblationMode.HIGH_FREQ_ONLY:
+            # 仅使用高频成分：屏蔽长期分支，保留原始和短期分支
+            final_repr = (
+                fusion_weights[..., 0:1] * rating_emb +
+                torch.zeros_like(fusion_weights[..., 1:2]) * long_term_enhanced +  # 长期权重设为0
+                fusion_weights[..., 2:3] * short_term_enhanced
+            )
+        else:
+            # 完整模型：自适应权重融合（默认）
+            final_repr = (
+                fusion_weights[..., 0:1] * rating_emb +
+                fusion_weights[..., 1:2] * long_term_enhanced +  
+                fusion_weights[..., 2:3] * short_term_enhanced
+            )
         
         # 11. 分析信息收集
         analysis_info = {
@@ -168,6 +195,10 @@ class OptimizedFourierRatingEncoder(nn.Module):
             'signal_power': {
                 'long_term_power': torch.mean(long_term_signal ** 2).item(),
                 'short_term_power': torch.mean(short_term_signal ** 2).item()
+            },
+            # 为可视化添加的数据，与简化后的plot_multi_domain_fourier_comparison_journal兼容
+            'visualization_data': {
+                'adaptive_weights': fusion_weights  # 只保留自适应权重用于可视化
             }
         }
         
@@ -278,35 +309,60 @@ class OptimizedFourierRatingEncoder(nn.Module):
 class TemporalEnhancedRatingModule(nn.Module):
     """
     时频域增强的Rating模块
-    使用统一的OptimizedFourierRatingEncoder处理所有领域
+    为每个领域创建独立的OptimizedFourierRatingEncoder实例
     """
     
-    def __init__(self, hidden_units, rating_strategy='temporal_fourier', dropout_rate=0.1, args=None):
+    def __init__(self, hidden_units, rating_strategy='temporal_fourier', dropout_rate=0.1, args=None, ablation_mode=AblationMode.FULL):
         super(TemporalEnhancedRatingModule, self).__init__()
         self.rating_strategy = rating_strategy
         self.hidden_units = hidden_units
+        self.ablation_mode = ablation_mode
         
         if rating_strategy != 'temporal_fourier':
             raise ValueError(f"Unsupported rating strategy: {rating_strategy}. Only 'temporal_fourier' is supported.")
         
-        # 使用统一的编码器处理所有领域
+        # 获取领域数量，默认为3个领域
+        self.num_domains = getattr(args, 'num_domains', 3)
+        
+        # 为每个领域创建独立的编码器实例
         config = self._get_unified_config(args)
+        self.domain_encoders = nn.ModuleDict()
         
-        self.fourier_encoder = OptimizedFourierRatingEncoder(
-            hidden_units=self.hidden_units,
-            max_len=config['max_len'],
-            cutoff_ratio=config['cutoff_ratio'],
-            learnable_cutoff=config['learnable_cutoff'],
-            attention_heads=config['attention_heads'],
-            dropout_rate=dropout_rate,
-            use_windowing=config['use_windowing']
-        )
+        for domain_id in range(self.num_domains):
+            self.domain_encoders[str(domain_id)] = OptimizedFourierRatingEncoder(
+                hidden_units=self.hidden_units,
+                max_len=config['max_len'],
+                cutoff_ratio=config['cutoff_ratio'],
+                learnable_cutoff=config['learnable_cutoff'],
+                attention_heads=config['attention_heads'],
+                dropout_rate=dropout_rate,
+                use_windowing=config['use_windowing'],
+                ablation_mode=ablation_mode  # 传递消融模式
+            )
         
-        print(f"🔧 Created unified temporal-enhanced rating encoder:")
+        print(f"🔧 Created domain-specific temporal-enhanced rating encoders:")
+        print(f"   - Number of domains: {self.num_domains}")
         print(f"   - Initial cutoff ratio: {config['cutoff_ratio']} ({'learnable' if config['learnable_cutoff'] else 'fixed'})")
         print(f"   - Attention heads: {config['attention_heads']}") 
         print(f"   - Windowing: {config['use_windowing']}")
-        print(f"   - Single encoder handles all domains adaptively")
+        print(f"   - Ablation mode: {ablation_mode.value}")
+        print(f"   - Each domain has its own independent encoder")
+    
+    def set_ablation_mode(self, ablation_mode: AblationMode):
+        """
+        动态设置消融模式
+        
+        Args:
+            ablation_mode: 新的消融模式
+        """
+        self.ablation_mode = ablation_mode
+        for encoder in self.domain_encoders.values():
+            encoder.ablation_mode = ablation_mode
+        print(f"🔌 Switched to ablation mode: {ablation_mode.value}")
+    
+    def get_ablation_mode(self) -> AblationMode:
+        """获取当前消融模式"""
+        return self.ablation_mode
     
     def _get_unified_config(self, args=None):
         """获取统一的配置"""
@@ -322,14 +378,70 @@ class TemporalEnhancedRatingModule(nn.Module):
         """
         Args:
             rating_seq: (batch_size, seq_len)
-            domain_ids: (batch_size,) - 兼容性参数，不再使用
+            domain_ids: (batch_size,) - 领域ID，必需参数
             implicit_signals: 兼容性参数
         Returns:
             enhanced_rating_repr: (batch_size, seq_len, hidden_units)
             extra_info: dict
         """
-        # 使用统一编码器处理所有样本
-        enhanced_repr, analysis_info = self.fourier_encoder(rating_seq)
+        batch_size, seq_len = rating_seq.shape
+        device = rating_seq.device
         
-        extra_info = {'frequency_analysis': analysis_info}
+        # 检查domain_ids是否提供
+        if domain_ids is None:
+            raise ValueError("domain_ids is required for domain-specific processing")
+        
+        # 确保domain_ids在正确的设备上
+        if isinstance(domain_ids, list):
+            domain_ids = torch.LongTensor(domain_ids).to(device)
+        elif isinstance(domain_ids, torch.Tensor):
+            domain_ids = domain_ids.to(device)
+        
+        # 初始化输出张量
+        enhanced_repr = torch.zeros(batch_size, seq_len, self.hidden_units, 
+                                   device=device, dtype=torch.float32)
+        
+        # 收集所有分析信息
+        all_analysis_info = {}
+        
+        # 根据域ID分组处理
+        unique_domains = torch.unique(domain_ids)
+        
+        for domain_id in unique_domains:
+            domain_key = str(domain_id.item())
+            
+            # 检查是否存在该域的编码器
+            if domain_key not in self.domain_encoders:
+                raise ValueError(f"No encoder found for domain_id: {domain_id.item()}. "
+                               f"Available domains: {list(self.domain_encoders.keys())}")
+            
+            # 获取属于当前域的样本索引
+            domain_mask = (domain_ids == domain_id)
+            domain_indices = torch.where(domain_mask)[0]
+            
+            if len(domain_indices) == 0:
+                continue
+            
+            # 提取当前域的rating序列
+            domain_rating_seq = rating_seq[domain_indices]  # (domain_batch_size, seq_len)
+            
+            # 使用对应域的编码器处理
+            domain_enhanced_repr, domain_analysis_info = self.domain_encoders[domain_key](domain_rating_seq)
+            
+            # 将结果放回原始位置
+            enhanced_repr[domain_indices] = domain_enhanced_repr
+            
+            # 收集分析信息
+            all_analysis_info[f'domain_{domain_id.item()}'] = domain_analysis_info
+        
+        # 构建额外信息
+        extra_info = {
+            'frequency_analysis': all_analysis_info,
+            'domain_processing_summary': {
+                'processed_domains': [int(d.item()) for d in unique_domains],
+                'samples_per_domain': {int(d.item()): int((domain_ids == d).sum().item()) 
+                                     for d in unique_domains}
+            }
+        }
+        
         return enhanced_repr, extra_info

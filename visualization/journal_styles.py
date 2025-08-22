@@ -168,6 +168,54 @@ class JournalStyles:
             'figure.subplot.wspace': 0.25
         }
         
+        # 自定义统一配色样式
+        self.custom_style = {
+            # 字体配置 - 现代简洁风格
+            'font.family': 'sans-serif',
+            'font.size': 9,
+            'font.weight': 'normal',
+            'axes.titlesize': 11,
+            'axes.labelsize': 9,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 8,
+            'figure.titlesize': 12,
+            
+            # 图表尺寸和分辨率
+            'figure.figsize': (6.0, 4.0),
+            'figure.dpi': 300,
+            'savefig.dpi': 300,
+            'savefig.format': 'png',
+            'savefig.bbox': 'tight',
+            'savefig.pad_inches': 0.1,
+            
+            # 线条和标记
+            'lines.linewidth': 1.2,
+            'lines.markersize': 5,
+            'patch.linewidth': 0.8,
+            'axes.linewidth': 1.0,
+            
+            # 网格和边框
+            'axes.grid': True,
+            'grid.alpha': 0.3,
+            'grid.linewidth': 0.6,
+            'axes.spines.top': False,
+            'axes.spines.right': False,
+            'axes.facecolor': 'white',
+            'figure.facecolor': 'white',
+            
+            # 统一配色方案 - 9色配色表
+            'axes.prop_cycle': "cycler('color', ['#8CD0C3', '#BCB9D8', '#F18072', '#80B1D2', '#F9B063', '#B3D46B', '#F7CBDF', '#D7D7D5', '#BA7FB5'])",
+            
+            # 间距设置
+            'figure.subplot.left': 0.12,
+            'figure.subplot.bottom': 0.15,
+            'figure.subplot.right': 0.95,
+            'figure.subplot.top': 0.9,
+            'figure.subplot.hspace': 0.3,
+            'figure.subplot.wspace': 0.25
+        }
+        
         # 通用高质量样式
         self.high_quality_style = {
             # 字体配置 - 使用默认serif字体
@@ -210,13 +258,14 @@ class JournalStyles:
         应用指定期刊的样式配置
         
         Args:
-            journal: 期刊名称 ('nature', 'science', 'cell', 'high_quality')
+            journal: 期刊名称 ('nature', 'science', 'cell', 'high_quality', 'custom')
         """
         style_map = {
             'nature': self.nature_style,
             'science': self.science_style,
             'cell': self.cell_style,
-            'high_quality': self.high_quality_style
+            'high_quality': self.high_quality_style,
+            'custom': self.custom_style
         }
         
         if journal not in style_map:
@@ -267,6 +316,11 @@ class JournalStyles:
                 'single': (4.8, 3.6),
                 'double': (9.6, 7.2),
                 'full': (16.0, 10.5)
+            },
+            'custom': {
+                'single': (6.0, 4.0),
+                'double': (12.0, 8.0),
+                'full': (18.0, 12.0)
             }
         }
         

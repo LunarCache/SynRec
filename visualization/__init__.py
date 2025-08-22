@@ -13,18 +13,15 @@
 
 from .color_schemes import (
     JournalColorSchemes,
-    get_journal_palette,
-    get_colorblind_friendly_colors
+    get_journal_palette
 )
 from .journal_styles import (
     JournalStyles,
-    apply_journal_style,
-    get_journal_config
+    apply_journal_style
 )
 from .config import (
     VisualizationConfig,
     load_config,
-    save_config,
     create_journal_config
 )
 from .enhanced_plots import (
@@ -32,7 +29,10 @@ from .enhanced_plots import (
     plot_fourier_attention_journal,
     plot_expert_routing_journal,
     plot_tsne_specialization_journal,
-    plot_multi_domain_fourier_comparison_journal
+    plot_inference_combined_overview,
+    plot_multi_domain_fourier_comparison_journal,
+    plot_multi_domain_fourier_comparison_enhanced_journal,
+    plot_frequency_ablation_comparison_journal
 )
 from .export_utils import (
     FigureExporter,
@@ -57,7 +57,10 @@ __all__ = [
     "plot_fourier_attention_journal",
     "plot_expert_routing_journal", 
     "plot_tsne_specialization_journal",
+    "plot_inference_combined_overview",
     "plot_multi_domain_fourier_comparison_journal",
+    "plot_multi_domain_fourier_comparison_enhanced_journal",
+    "plot_frequency_ablation_comparison_journal",
     "FigureExporter",
     "export_figure_journal",
     "create_publication_package",

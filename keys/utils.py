@@ -272,8 +272,7 @@ def evaluate_batched(model, dataset, args, eval_type='valid'):
 
     # Aggregate and calculate final results
     results = {}
-    total_metrics = defaultdict(float)
-    total_users = 0
+    domain_averages = defaultdict(list)  # 存储每个领域的平均值
     
     for domain_id, metrics in sorted(domain_metrics.items()):
         count = metrics['count']
@@ -281,11 +280,11 @@ def evaluate_batched(model, dataset, args, eval_type='valid'):
             for key in ['NDCG@5', 'HT@5', 'MRR@5', 'NDCG@10', 'HT@10', 'MRR@10']:
                 metric_val = metrics[key] / count
                 results[f'domain_{domain_id}_{key}'] = metric_val
-                total_metrics[key] += metrics[key]
-            total_users += count
+                domain_averages[key].append(metric_val)  # 收集每个领域的平均值
 
-    for key, total_value in total_metrics.items():
-        results[f'overall_{key}'] = total_value / total_users if total_users > 0 else 0
+    # 计算各领域指标的算术平均值作为overall指标
+    for key, domain_values in domain_averages.items():
+        results[f'overall_{key}'] = sum(domain_values) / len(domain_values) if len(domain_values) > 0 else 0
     
     return results
 

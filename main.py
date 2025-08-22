@@ -244,15 +244,15 @@ def parse_args():
     parser.add_argument('--specialization_weight', default=0.01, type=float, help='Weight for specialization loss')
     parser.add_argument('--use_contrastive_loss', default=True, type=str2bool, help='Enable contrastive learning for expert specialization')
     parser.add_argument('--contrastive_weight', default=0.01, type=float, help='Weight for contrastive loss')
-    parser.add_argument('--visualize', default=False, type=str2bool, help='Enable visualization of expert usage')
+    parser.add_argument('--visualize', default=True, type=str2bool, help='Enable visualization of expert usage')
     parser.add_argument('--log_freq', default=100, type=int, help='Frequency of logging visualizations (in steps)')
     parser.add_argument('--tsne_log_freq', default=1, type=int, help='Frequency of logging t-SNE plots (in epochs) - DEPRECATED: now using performance-based triggering')
     parser.add_argument('--viz_on_improvement', default=True, type=str2bool, help='Only generate visualizations when model performance improves')
     parser.add_argument('--viz_force_epochs', default=[], type=lambda x: [int(i) for i in x.split(',')] if x else [], help='Force visualization on specific epochs (comma-separated), regardless of performance')
     parser.add_argument('--tsne_sample_size', default=512, type=int, help='Number of points to sample for t-SNE plot')
     # Enhanced visualization parameters
-    parser.add_argument('--journal_style', default='science', type=str, 
-                       choices=['nature', 'science', 'cell', 'high_quality'],
+    parser.add_argument('--journal_style', default='custom', type=str, 
+                       choices=['nature', 'science', 'cell', 'high_quality', 'custom'],
                        help='Journal style for enhanced visualizations')
     parser.add_argument('--viz_dpi', default=300, type=int, help='DPI for visualization outputs')
     parser.add_argument('--viz_format', default='png', type=str, 
@@ -612,7 +612,7 @@ def main():
                                         if args.use_swanlab:
                                             if swanlab.get_run() is not None:
                                                 swanlab.log({
-                                                    f"enhanced_multi_domain_fourier/layer_{layer_idx}": swanlab.Image(multi_fig)
+                                                    f"enhanced_multi_domain_adaptive_weights/layer_{layer_idx}": swanlab.Image(multi_fig)
                                                 }, step=epoch)
                                         
                                         plt.close(multi_fig)
@@ -666,7 +666,7 @@ def main():
                                         if args.use_swanlab:
                                             if swanlab.get_run() is not None:
                                                 swanlab.log({
-                                                    f"enhanced_multi_domain_fourier/layer_{layer_idx}": swanlab.Image(multi_fig)
+                                                    f"enhanced_multi_domain_adaptive_weights/layer_{layer_idx}": swanlab.Image(multi_fig)
                                                 }, step=epoch)
                                         
                                         plt.close(multi_fig)

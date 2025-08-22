@@ -124,6 +124,24 @@ class HAGMRec(torch.nn.Module):
                         
                         freq_analysis = rating_extra_info['frequency_analysis']
                         total_viz_data['temporal_frequency_analysis'][i] = freq_analysis
+                        
+                        # 生成fourier_rating_attention_detailed数据结构
+                        if 'fourier_rating_attention_detailed' not in total_viz_data:
+                            total_viz_data['fourier_rating_attention_detailed'] = [None] * len(self.attention_layers)
+                        
+                        # 按domain_id组织注意力数据
+                        layer_fourier_data = {}
+                        for domain_key, domain_analysis in freq_analysis.items():
+                            if 'visualization_data' in domain_analysis:
+                                viz_data = domain_analysis['visualization_data']
+                                # 提取domain_id（例如 "domain_0" -> 0）
+                                if domain_key.startswith('domain_'):
+                                    domain_id = int(domain_key.split('_')[1])
+                                    layer_fourier_data[domain_id] = {
+                                        'adaptive_weights': viz_data['adaptive_weights']  # 只保留自适应权重
+                                    }
+                        
+                        total_viz_data['fourier_rating_attention_detailed'][i] = layer_fourier_data
                 else:
                     # Use traditional simple rating embedding for backward compatibility
                     rating_embedding = self.rating_emb(rating_seqs)
