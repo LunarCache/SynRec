@@ -7,7 +7,6 @@ from keys.model import HAGMRec
 from keys.utils import *
 import random
 import swanlab
-import threading
 import numpy as np
 from collections import OrderedDict, defaultdict
 
