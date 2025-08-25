@@ -30,13 +30,19 @@ python main.py --train_dir <experiment_name> --rating_strategy temporal_fourier
 python main.py --inference_only true --state_dict_path <path_to_model.pth> --train_dir <experiment_name>
 ```
 
-### Data Processing
+### Visualization and Analysis
 ```bash
-# Process raw datasets
-python data_process.py
+# Enhanced inference visualization (post-training analysis)
+python scripts/inference_visualization.py --state_dict_path <model.pth> --train_dir <experiment_name>
 
-# Process new datasets
-python process_datasets.py
+# Statistical analysis and domain comparison
+python scripts/multi_domain_user_comparison.py
+
+# Fourier ablation studies
+python scripts/run_fourier_ablation_statistical.py
+
+# Batch visualization and statistics
+python scripts/batch_viz_stats.py
 ```
 
 ### Testing
@@ -44,8 +50,20 @@ python process_datasets.py
 # Run system tests
 python test_system.py
 
+# Run integration tests
+python test_integration.py
+
 # Gradient checking
 python gradient_check.py
+```
+
+### Data Processing
+```bash
+# Process raw datasets
+python data_process.py
+
+# Process new datasets
+python process_datasets.py
 ```
 
 ## High-Level Architecture
@@ -111,7 +129,10 @@ python gradient_check.py
 - `main.py`: Primary training and evaluation script
 - `keys/model.py`: Core HAGMRec model implementation
 - `keys/temporal_rating_modules.py`: Optimized temporal-frequency rating encoder
+- `keys/c_moe.py`: Mixture of Experts implementation
 - `keys/utils.py`: Data loading and evaluation utilities
+- `scripts/`: Advanced visualization and analysis tools
 - `exp/`: Experiment outputs (models, logs, visualizations)
 - `data/`: Preprocessed datasets
 - `md/BEST_ARGS.md`: Optimal hyperparameter configurations
+- `swanlog/`: SwanLab experiment tracking logs
