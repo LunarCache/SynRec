@@ -198,7 +198,7 @@ class OptimizedFourierRatingEncoder(nn.Module):
     
     def _z_score_normalize(self, rating_seq):
         """Z-score标准化rating序列"""
-        # 忽略padding位置（假设0为padding）
+        # 忽略padding位置（0为padding）
         valid_mask = (rating_seq != 0).float()
         
         # 计算每个序列的均值和标准差（仅考虑非padding位置）

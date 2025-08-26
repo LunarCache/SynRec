@@ -44,7 +44,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 # Project imports
 from keys.utils import partition_multi_domain
-from keys.model import HAGMRec
+from keys.model import SynRec
 from keys.temporal_rating_modules import OptimizedFourierRatingEncoder
 
 # Local library
@@ -126,7 +126,7 @@ def select_representative_users(user_train: Dict[int, List[int]],
     return representatives
 
 
-def analyze_representative_user(user_info: Dict, model: HAGMRec, args) -> Dict:
+def analyze_representative_user(user_info: Dict, model: SynRec, args) -> Dict:
     """
     Perform comprehensive analysis for a representative user.
     
@@ -896,7 +896,7 @@ def main():
     
     model_args = ModelArgs()
     
-    model = HAGMRec(
+    model = SynRec(
         user_num=n_users,
         item_num=n_items,
         args=model_args

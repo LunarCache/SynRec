@@ -8,9 +8,9 @@ from keys.temporal_rating_modules import TemporalEnhancedRatingModule
 # --- End MoE Integration ---
 
 
-class HAGMRec(torch.nn.Module):
+class SynRec(torch.nn.Module):
     def __init__(self, user_num, item_num, args):
-        super(HAGMRec, self).__init__()
+        super(SynRec, self).__init__()
         self.args = args
         self.user_num = user_num
         self.item_num = item_num

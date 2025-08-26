@@ -26,7 +26,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 # Project imports
 from keys.utils import partition_multi_domain
-from keys.model import HAGMRec
+from keys.model import SynRec
 from keys.temporal_rating_modules import OptimizedFourierRatingEncoder  # noqa: F401
 
 # Local library
@@ -442,7 +442,7 @@ def main():
     setattr(cfg, 'num_workers', int(exp_args.get('num_workers', 0)))
     setattr(cfg, 'num_domains', len(datasets))
 
-    model = HAGMRec(usernum, itemnum, cfg).to('cpu')
+    model = SynRec(usernum, itemnum, cfg).to('cpu')
 
     # checkpoint
     ckpt_path = args.state_dict_path

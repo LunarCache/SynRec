@@ -75,7 +75,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 # Project imports
 from keys.utils import partition_multi_domain
-from keys.model import HAGMRec
+from keys.model import SynRec
 
 # Local library
 from viz_lib import (
@@ -399,7 +399,7 @@ def main():
     setattr(cfg, 'num_workers', int(exp_args.get('num_workers', 0)))
     setattr(cfg, 'num_domains', len(datasets))
 
-    model = HAGMRec(usernum, itemnum, cfg).to(device)
+    model = SynRec(usernum, itemnum, cfg).to(device)
 
     ckpt_path = args.state_dict_path
     if ckpt_path is None and args.experiment_dir is not None:
@@ -1129,11 +1129,11 @@ def generate_domain_comparison_plots(domain_data: Dict[int, List[Dict]], domain_
     
     # 保存统一图表，优化布局
     plt.tight_layout(rect=[0, 0.08, 1, 0.92])  # 为标题和图例预留足够空间
-    plt.savefig(os.path.join(args.output_dir, 'domain_comparison_unified.pdf'),
+    plt.savefig(os.path.join(args.output_dir, 'domain_comparison_unified.png'),
                bbox_inches='tight', dpi=600, facecolor='white')
     plt.close()
     
-    print(f"✅ 生成统一的多领域对比图表: domain_comparison_unified.pdf")
+    print(f"✅ 生成统一的多领域对比图表: domain_comparison_unified.png")
 
 
 if __name__ == "__main__":

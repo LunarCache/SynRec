@@ -9,7 +9,7 @@ class PointWiseFeedForward(torch.nn.Module):
 
         self.use_moe = getattr(args, 'use_moe', False)
         if self.use_moe and args is not None:
-            self.moe_ffn = HAGMoEFFN(hidden_units, args)
+            self.moe_ffn = FGMoEFFN(hidden_units, args)
         else:
             # Original FFN implementation
             self.conv1 = torch.nn.Conv1d(hidden_units, hidden_units, kernel_size=1)
@@ -30,9 +30,9 @@ class PointWiseFeedForward(torch.nn.Module):
             # Return a dict with zero losses and empty viz_data for compatibility
             return outputs, {}, {}
 
-class HAGMoEFFN(nn.Module):
+class FGMoEFFN(nn.Module):
     def __init__(self, hidden_units, args):
-        super(HAGMoEFFN, self).__init__()
+        super(FGMoEFFN, self).__init__()
         self.args = args # Store args
         self.hidden_units = hidden_units
         self.num_domain_experts = getattr(args, 'num_domains')

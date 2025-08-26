@@ -35,7 +35,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # 核心模块导入
-from keys.model import HAGMRec
+from keys.model import SynRec
 from keys.utils import partition_multi_domain, MoerecDataset, MoerecCollator, StratifiedSampler
 
 # 可视化模块导入
@@ -560,7 +560,7 @@ def main():
     
     # 加载模型
     print(f"{BOLD}🤖 Loading trained model...{RESET}")
-    model = HAGMRec(usernum, itemnum, model_args).to(device)
+    model = SynRec(usernum, itemnum, model_args).to(device)
     
     # 加载权重
     try:

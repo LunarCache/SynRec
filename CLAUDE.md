@@ -68,7 +68,7 @@ python process_datasets.py
 
 ## High-Level Architecture
 
-### Core Model: HAGMRec (Hierarchical Adaptive Gating Multi-domain Recommender)
+### Core Model: SynRec (Synergistic Multi-Domain Recommendation with Frequency-Guided Expert Specialization)
 
 **Main Components:**
 - **HAGMRec Model** (`keys/model.py`): Core transformer-based recommendation model with:

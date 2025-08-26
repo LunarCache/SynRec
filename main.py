@@ -3,7 +3,7 @@ import time
 import torch
 import argparse
 from tqdm import tqdm
-from keys.model import HAGMRec
+from keys.model import SynRec
 from keys.utils import *
 import random
 import swanlab
@@ -166,7 +166,7 @@ def main():
         collate_fn=train_collator,
         pin_memory=True # Speeds up data transfer to GPU
     )
-    model = HAGMRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
+    model = SynRec(usernum, itemnum, args).to(args.device) # no ReLU activation in original SASRec implementation?
     
     total_params = 0
     original_params = 0

@@ -9,7 +9,7 @@ import numpy as np
 import argparse
 import time
 from keys.model import HAGMRec
-from keys.c_moe import HAGMoEFFN
+from keys.c_moe import FGMoEFFN
 from keys.utils import partition_multi_domain, MoerecStyleSampler
 
 def test_model_creation():
@@ -258,7 +258,7 @@ def test_moe_component():
         args = MockArgs()
         hidden_units = 64
         
-        moe = HAGMoEFFN(hidden_units, args)
+        moe = FGMoEFFN(hidden_units, args)
         moe.train()
         
         # 测试输入
