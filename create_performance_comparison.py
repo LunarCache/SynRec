@@ -62,7 +62,7 @@ class PerformanceVisualizer:
         # 方法名称列表（按表格顺序）
         methods = [
             'PopRec', 'BPR', 'FMC', 'FPMC', 'TransRec', 'GRU4Rec', 'GRU4Rec+', 'Caser',
-            'SASRec', 'π-Net', 'MMoE', 'BERT4Rec', 'Transformers4Rec', 'FairSR', 'MIA-SR', 'INSPEQ', 'SynRec'
+            'SASRec', 'π-Net', 'MMoE', 'BERT4Rec', 'FMLP-Rec', 'FairSR', 'MIA-SR', 'INSPEQ', 'SynRec'
         ]
 
         # 性能数据（按方法、数据集、指标的顺序）
@@ -127,10 +127,10 @@ class PerformanceVisualizer:
                 'Games': {'NDCG@10': 0.5124, 'HR@10': 0.7289},
                 'MovieLens-1M': {'NDCG@10': 0.5767, 'HR@10': 0.8089}
             },
-            'Transformers4Rec': {
-                'Amazon Beauty': {'NDCG@10': 0.2533, 'HR@10': 0.4344},
-                'Games': {'NDCG@10': 0.3312, 'HR@10': 0.5311},
-                'MovieLens-1M': {'NDCG@10': 0.3921, 'HR@10': 0.4723}
+            'FMLP-Rec': {
+                'Amazon Beauty': {'NDCG@10': 0.3385, 'HR@10': 0.4998},
+                'Games': {'NDCG@10': 0.5311, 'HR@10': 0.7543},
+                'MovieLens-1M': {'NDCG@10': 0.5862, 'HR@10': 0.8205}
             },
             'FairSR': {
                 'Amazon Beauty': {'NDCG@10': 0.2653, 'HR@10': 0.4723},
@@ -354,7 +354,7 @@ SASRec & 0.3476 & 0.5205 & 0.4952 & 0.7144 & 0.5786 & 0.8127 \\
 $\pi$-Net & 0.2956 & 0.4521 & 0.4234 & 0.6234 & 0.4876 & 0.7123 \\
 MMoE & 0.3156 & 0.4678 & 0.4892 & 0.7056 & 0.5234 & 0.7634 \\
 BERT4Rec & 0.3089 & 0.4732 & 0.5124 & 0.7289 & 0.5767 & 0.8089 \\
-Transformers4Rec & 0.2533 & 0.4344 & 0.3312 & 0.5311 & 0.3921 & 0.4723 \\
+FMLP-Rec & 0.3385 & 0.4998 & 0.5311 & 0.7543 & 0.5862 & 0.8205 \\
 FairSR & 0.2653 & 0.4723 & 0.4684 & 0.7312 & 0.5104 & 0.8137 \\
 MIA-SR & 0.3421 & 0.5236 & 0.5571 & 0.7823 & 0.6082 & 0.8277 \\
 INSPEQ & \underline{0.3477} & \underline{0.5322} & \underline{0.5594} & \underline{0.7951} & \underline{0.6253} & \underline{0.8316} \\

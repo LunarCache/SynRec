@@ -171,11 +171,13 @@ class EvalDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         u = self.users[idx]
         
-        # Correctly extract item sequence from (item, rating) tuples
+        # Correctly extract item & rating sequence from (item, rating) tuples
         seq_tuples = self.user_train.get(u, [])
-        seq = [item[0] for item in seq_tuples]
-        if len(seq) > self.maxlen:
-            seq = seq[-self.maxlen:]
+        item_seq = [item[0] for item in seq_tuples]
+        rating_seq = [item[1] for item in seq_tuples]
+        if len(item_seq) > self.maxlen:
+            item_seq = item_seq[-self.maxlen:]
+            rating_seq = rating_seq[-self.maxlen:]
         
         rated = set(self.user_full_interaction.get(u, []))
         rated.add(0)
@@ -202,24 +204,32 @@ class EvalDataset(torch.utils.data.Dataset):
             
         return {
             'uid': u,
-            'seq': torch.LongTensor(seq),
+            'seq': torch.LongTensor(item_seq),
+            # Provide rating prefix aligned with item_seq (exclude last target item implicitly as eval set uses last interaction)
+            'rating_seq': torch.LongTensor(rating_seq),
             'item_idx': torch.LongTensor(item_idx),
-            'domain_id': domain_id
+            'domain_id': domain_id,
+            'true_item': true_item
         }
 
 def eval_collate_fn(batch):
     uids = [item['uid'] for item in batch]
     seqs = [item['seq'] for item in batch]
+    rating_seqs = [item['rating_seq'] for item in batch]
     item_indices = torch.stack([item['item_idx'] for item in batch])
     domain_ids = [item['domain_id'] for item in batch]
+    true_items = [item['true_item'] for item in batch]
 
     # Pad sequences
     batch_maxlen = max(len(s) for s in seqs)
     padded_seqs = torch.zeros(len(batch), batch_maxlen, dtype=torch.long)
+    padded_rating_seqs = torch.zeros(len(batch), batch_maxlen, dtype=torch.long)
     for i, s in enumerate(seqs):
         padded_seqs[i, -len(s):] = s
+    for i, rs in enumerate(rating_seqs):
+        padded_rating_seqs[i, -len(rs):] = rs
 
-    return torch.LongTensor(uids), padded_seqs, item_indices, torch.LongTensor(domain_ids)
+    return torch.LongTensor(uids), padded_seqs, padded_rating_seqs, item_indices, torch.LongTensor(domain_ids), torch.LongTensor(true_items)
 
 
 def evaluate_batched(model, dataset, args, eval_type='valid'):
@@ -236,7 +246,17 @@ def evaluate_batched(model, dataset, args, eval_type='valid'):
     for u, items_with_ratings in valid.items(): user_full_interaction[u].extend([item[0] for item in items_with_ratings])
     for u, items_with_ratings in test.items(): user_full_interaction[u].extend([item[0] for item in items_with_ratings])
 
-    eval_dataset = EvalDataset(train, eval_data, user_to_domain, args.maxlen, itemnum, domain_to_item_range, args.use_domain_sampling_for_evaluation, user_full_interaction)
+    eval_dataset = EvalDataset(
+        train,
+        eval_data,
+        user_to_domain,
+        args.maxlen,
+        itemnum,
+        domain_to_item_range,
+        args.use_domain_sampling_for_evaluation,
+        user_full_interaction,
+        getattr(args, 'eval_negative_sample_size', 100)
+    )
     eval_loader = torch.utils.data.DataLoader(
         eval_dataset,
         batch_size=args.batch_size,
@@ -246,14 +266,76 @@ def evaluate_batched(model, dataset, args, eval_type='valid'):
         pin_memory=True
     )
 
-    domain_metrics = defaultdict(lambda: {'NDCG@5': 0.0, 'HT@5': 0.0, 'NDCG@10': 0.0, 'HT@10': 0.0, 'MRR@5': 0.0, 'MRR@10': 0.0, 'count': 0})
+    domain_metrics = defaultdict(lambda: {
+        'NDCG@5': 0.0, 'HT@5': 0.0, 'MRR@5': 0.0,
+        'NDCG@10': 0.0, 'HT@10': 0.0, 'MRR@10': 0.0,
+        'count': 0
+    })
 
+    import time
+    t_eval_start = time.time()
     with torch.no_grad():
-        for u, seq, item_idx, domain_id_batch in tqdm(eval_loader, desc=desc, colour='green'):
-            seq, item_idx, domain_id_batch = seq.to(args.device), item_idx.to(args.device), domain_id_batch.to(args.device)
+        for u, seq, rating_seq, item_idx, domain_id_batch, true_items in tqdm(eval_loader, desc=desc, colour='green'):
+            # Move tensors to device for consistent indexing and computation
+            u = u.to(args.device)
+            seq = seq.to(args.device)
+            rating_seq = rating_seq.to(args.device)
+            item_idx = item_idx.to(args.device)
+            domain_id_batch = domain_id_batch.to(args.device)
+            true_items = true_items.to(args.device)
             
-            predictions = model.predict(u, seq, item_idx, domain_id_batch)
-            ranks = predictions.argsort(dim=1, descending=True).argsort(dim=1)[:, 0]
+            if getattr(args, 'full_ranking_eval', False):
+                # Full ranking: compute rank of true item among all candidates (domain-limited or global)
+                batch_size = seq.size(0)
+                ranks = torch.zeros(batch_size, dtype=torch.long, device=args.device)
+
+                # 1) Score of true item per user
+                true_items_unsq = true_items.unsqueeze(1)
+                s_true = model.predict(u, seq, true_items_unsq, domain_id_batch, rating_seqs=rating_seq).squeeze(1)
+
+                # 2) Iterate by domain groups within the batch to reuse candidate sets
+                unique_domains = torch.unique(domain_id_batch)
+                for d in unique_domains:
+                    mask = (domain_id_batch == d)
+                    idxs = torch.where(mask)[0]
+                    if idxs.numel() == 0:
+                        continue
+
+                    # Candidate range
+                    if args.use_domain_sampling_for_evaluation:
+                        start_item, end_item = dataset[6][d.item()]
+                        candidates = torch.arange(start_item, end_item + 1, device=args.device, dtype=torch.long)
+                    else:
+                        candidates = torch.arange(1, dataset[5] + 1, device=args.device, dtype=torch.long)
+
+                    # Chunked scoring against candidates and count how many beat the true item
+                    item_chunk = getattr(args, 'eval_item_batch_size', 4096)
+                    greater_counts = torch.zeros(idxs.numel(), device=args.device, dtype=torch.long)
+                    # Extract subgroup tensors
+                    u_sub = u[idxs]
+                    seq_sub = seq[idxs]
+                    rating_sub = rating_seq[idxs]
+                    domain_sub = domain_id_batch[idxs]
+                    s_true_sub = s_true[idxs]
+
+                    for start in range(0, candidates.numel(), item_chunk):
+                        cand_chunk = candidates[start:start + item_chunk]
+                        # Broadcast candidate chunk to all users in subgroup
+                        cand_mat = cand_chunk.unsqueeze(0).expand(idxs.numel(), -1)
+                        scores_chunk = model.predict(u_sub, seq_sub, cand_mat, domain_sub, rating_seqs=rating_sub)
+                        # Filter out scores for items in user history
+                        for i in range(idxs.numel()):
+                            u_id = u_sub[i].item()
+                            user_history = torch.tensor(user_full_interaction[u_id], device=args.device, dtype=torch.long)
+                            mask = ~torch.isin(cand_chunk, user_history)
+                            valid_scores = scores_chunk[i][mask]
+                            greater_counts[i] += (valid_scores > s_true_sub[i]).sum()
+
+                    ranks[idxs] = greater_counts + 1
+            else:
+                # Sampling evaluation (1 positive + N negatives)
+                predictions = model.predict(u, seq, item_idx, domain_id_batch, rating_seqs=rating_seq)
+                ranks = predictions.argsort(dim=1, descending=True).argsort(dim=1)[:, 0]
 
             for i, rank in enumerate(ranks):
                 rank_item = rank.item()
@@ -285,6 +367,31 @@ def evaluate_batched(model, dataset, args, eval_type='valid'):
     # 计算各领域指标的算术平均值作为overall指标
     for key, domain_values in domain_averages.items():
         results[f'overall_{key}'] = sum(domain_values) / len(domain_values) if len(domain_values) > 0 else 0
+    # 计算按领域样本数加权的 overall_weighted_ 指标
+    # 收集加权需要的 (metric_name -> list of (value, count))
+    weighted_collect = defaultdict(list)
+    for domain_id, metrics in sorted(domain_metrics.items()):
+        count = metrics['count']
+        if count <= 0:
+            continue
+        for key in ['NDCG@5', 'HT@5', 'MRR@5', 'NDCG@10', 'HT@10', 'MRR@10']:
+            val = metrics[key] / count if count > 0 else 0.0
+            weighted_collect[key].append((val, count))
+    for key, pairs in weighted_collect.items():
+        total_c = sum(c for _, c in pairs)
+        if total_c > 0:
+            w_avg = sum(v * c for v, c in pairs) / total_c
+        else:
+            w_avg = 0.0
+        results[f'overall_weighted_{key}'] = w_avg
+    # 附加效率指标
+    total_eval_count = 0
+    for metrics in domain_metrics.values():
+        total_eval_count += metrics['count']
+    eval_seconds = time.time() - t_eval_start
+    results['overall_eval_seconds'] = eval_seconds
+    results['overall_eval_users'] = total_eval_count
+    results['overall_eval_throughput_users_s'] = (total_eval_count / eval_seconds) if eval_seconds > 0 else 0.0
     
     return results
 

@@ -190,9 +190,9 @@ class SynRec(torch.nn.Module):
 
         return pos_logits, neg_logits, total_moe_loss_dict, viz_data
 
-    def predict(self, user_ids, log_seqs, item_indices, domain_ids=None): # for inference
-        # Note: rating_seqs is not used in prediction, so we pass None.
-        log_feats, _, _ = self.log2feats(log_seqs, rating_seqs=None, domain_ids=domain_ids)
+    def predict(self, user_ids, log_seqs, item_indices, domain_ids=None, rating_seqs=None): # for inference
+        # Use rating_seqs for frequency-guided routing at inference when available
+        log_feats, _, _ = self.log2feats(log_seqs, rating_seqs=rating_seqs, domain_ids=domain_ids)
 
         final_feat = log_feats[:, -1, :] # only use last QKV classifier, a waste
 

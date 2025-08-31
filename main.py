@@ -78,7 +78,10 @@ def parse_args():
     parser.add_argument('--state_dict_path', default=None, type=str)
     parser.add_argument('--seed', default=42, type=int, help='Seed for reproducibility.')
     parser.add_argument('--use_domain_sampling', default=False, type=str2bool, help='Enable domain-specific sampling,if false use global sampling')
-    parser.add_argument('--use_domain_sampling_for_evaluation', default=False, type=str2bool, help='Enable domain-specific sampling for evaluation, if false use global sampling')
+    parser.add_argument('--use_domain_sampling_for_evaluation', default=False, type=str2bool, help='Enable domain-specific candidate pool for evaluation (domain-limited)')
+    parser.add_argument('--full_ranking_eval', default=False, type=str2bool, help='Enable full-ranking evaluation (scores against all items)')
+    parser.add_argument('--eval_item_batch_size', default=4096, type=int, help='Batch size for item scoring during full-ranking evaluation')
+    parser.add_argument('--eval_negative_sample_size', default=100, type=int, help='Number of negatives per test instance in sampled evaluation')
     parser.add_argument('--use_moe', default=True, type=str2bool, help='Enable/Disable MoE')
     parser.add_argument('--use_datasets', nargs='+', default=['beauty_5_5', 'games_5_5', 'ml-1m_5_5'], help='Datasets to use for multi-domain training')
     parser.add_argument('--use_domain_info', default=True, type=str2bool, help='Use domain info in MoE gating')
@@ -103,6 +106,9 @@ def parse_args():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for data loading.')
     parser.add_argument('--swanlab_project', type=str, default='HAGMRec', help='SwanLab project name')
     parser.add_argument('--use_swanlab', default=True, type=str2bool, help='Enable/Disable SwanLab')
+    parser.add_argument('--baseline_preset', default=None, type=str, 
+                        choices=[None, 'shared_bottom', 'vanilla_moe', 'sharedbase_wo_rating', 'synrec_full'],
+                        help='Baseline preset to ensure fair, reproducible configurations')
     args = parser.parse_args()
     
     # Check compatibility between rating strategy and other options
@@ -112,6 +118,47 @@ def parse_args():
 
 def main():
     args = parse_args()
+    # Apply baseline preset overrides for fair comparisons
+    if getattr(args, 'baseline_preset', None) is not None:
+        preset = args.baseline_preset
+        if preset == 'shared_bottom':
+            # No MoE; shared Transformer backbone
+            args.use_moe = False
+            args.use_rating_emb = False
+            args.use_gated_fusion = False
+            args.use_specialization_loss = False
+            args.use_contrastive_loss = False
+            # keep load balancing irrelevant when no MoE
+        elif preset == 'vanilla_moe':
+            # Plain MoE: top-k across all experts; remove rating/domain enhancements and MoE-specific specialization losses
+            args.use_moe = True
+            args.moe_routing_strategy = 'vanilla'
+            args.use_rating_emb = False
+            args.use_gated_fusion = False
+            args.use_domain_info = False
+            args.use_specialization_loss = False
+            args.use_contrastive_loss = False
+            # keep load balancing True for stability
+        elif preset == 'sharedbase_wo_rating':
+            # Our shared-base MoE without rating signals, to isolate frequency-guided routing effects
+            args.use_moe = True
+            args.moe_routing_strategy = 'shared_base'
+            args.use_rating_emb = False
+            args.use_gated_fusion = False
+            args.use_domain_info = True
+            # keep specialization/contrastive/lb as in full model
+        elif preset == 'synrec_full':
+            # Full SynRec
+            args.use_moe = True
+            args.moe_routing_strategy = 'shared_base'
+            args.use_rating_emb = True
+            args.use_gated_fusion = True
+            args.use_domain_info = True
+            args.use_specialization_loss = True
+            args.use_contrastive_loss = True
+            args.moe_load_balancing = True
+        else:
+            pass
     # Set the seed for the entire environment
     if args.seed is not None:
         set_seed(args.seed)
@@ -332,6 +379,7 @@ def main():
                 
                 domain_metrics = defaultdict(dict)
                 overall_metrics = {}
+                weighted_overall_metrics = {}
                 
                 for k, v in sorted(metrics_dict.items()):
                     if k.startswith('domain_'):
@@ -339,7 +387,10 @@ def main():
                         domain_id = int(parts[1])
                         metric_name = '_'.join(parts[2:])
                         domain_metrics[domain_id][metric_name] = v
-                    elif k.startswith('overall_'):
+                    elif k.startswith('overall_weighted_'):
+                        metric_name = k.replace('overall_weighted_', '')
+                        weighted_overall_metrics[metric_name] = v
+                    elif k.startswith('overall_') and not k.startswith('overall_eval_'):
                         metric_name = k.replace('overall_', '')
                         overall_metrics[metric_name] = v
 
@@ -358,14 +409,33 @@ def main():
                     metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in sorted(d_metrics.items())])
                     print(f"        {metrics_str}")
                 
-                if overall_metrics:
+                if overall_metrics or weighted_overall_metrics:
                     print("    " + "-"*50)
-                    print(f"    - {BOLD}Overall{RESET}")
-                    metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in sorted(overall_metrics.items())])
-                    print(f"        {metrics_str}")
+                    if overall_metrics:
+                        print(f"    - {BOLD}Overall{RESET}")
+                        metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in sorted(overall_metrics.items())])
+                        print(f"        {metrics_str}")
+                    if weighted_overall_metrics:
+                        print(f"    - {BOLD}Weighted Overall{RESET}")
+                        metrics_str = ", ".join([f"weighted_{k}: {v:.4f}" for k, v in sorted(weighted_overall_metrics.items())])
+                        print(f"        {metrics_str}")
 
             pretty_print_metrics(t_valid, "Full Valid Metrics", GREEN)
             pretty_print_metrics(t_test, "Full Test Metrics", CYAN)
+            
+            # Print inference performance summary after all metrics
+            print(f"\n  {BOLD}Inference Performance Summary{RESET}")
+            valid_eval_seconds = t_valid.get('overall_eval_seconds', 0)
+            valid_eval_throughput = t_valid.get('overall_eval_throughput_users_s', 0)
+            test_eval_seconds = t_test.get('overall_eval_seconds', 0)
+            test_eval_throughput = t_test.get('overall_eval_throughput_users_s', 0)
+            
+            print(f"    - {BOLD}Valid Set{RESET}")
+            print(f"        Eval time (s): {valid_eval_seconds:.2f}")
+            print(f"        Eval throughput (users/s): {valid_eval_throughput:.2f}")
+            print(f"    - {BOLD}Test Set{RESET}")
+            print(f"        Eval time (s): {test_eval_seconds:.2f}")
+            print(f"        Eval throughput (users/s): {test_eval_throughput:.2f}")
 
             if args.use_swanlab:
                 eval_log_dict = {"epoch": epoch}
