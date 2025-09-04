@@ -184,13 +184,13 @@ class OptimizedFourierRatingEncoder(nn.Module):
         
         # 11. 分析信息收集
         analysis_info = {
-            'cutoff_frequency': current_cutoff,
-            'long_term_attention': long_term_attn,
-            'short_term_attention': short_term_attn, 
-            'fusion_weights': fusion_weights,
+            'cutoff_frequency': current_cutoff.item(),
+            'long_term_attention': long_term_attn.detach(),
+            'short_term_attention': short_term_attn.detach(), 
+            'fusion_weights': fusion_weights.detach(),
             # 为可视化添加的数据，与简化后的plot_multi_domain_fourier_comparison_journal兼容
             'visualization_data': {
-                'adaptive_weights': fusion_weights  # 只保留自适应权重用于可视化
+                'adaptive_weights': fusion_weights.detach()  # 只保留自适应权重用于可视化
             }
         }
         

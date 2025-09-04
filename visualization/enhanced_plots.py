@@ -1237,8 +1237,11 @@ def plot_multi_domain_fourier_comparison_journal(fourier_attn_data: Dict[int, Di
     ncols = num_domains
     
     # 调整图片尺寸
+    # 之前高度按 0.8 缩放导致整体过扁，这里提升高度可读性；
+    # 如果后续需要进一步调节，可将 height_scale 暴露到 VisualizationConfig。
     base_figsize = viz.config.get_figsize('multi')
-    figsize = (base_figsize[0] * ncols * 0.8, base_figsize[1] * 0.8)
+    height_scale = 1.2  # 增大整体高度（原为 0.8）
+    figsize = (base_figsize[0] * ncols * 0.8, base_figsize[1] * height_scale)
     
     fig, axes = plt.subplots(nrows, ncols, figsize=figsize, 
                             facecolor='white', edgecolor='none')
@@ -1382,9 +1385,9 @@ def plot_multi_domain_fourier_comparison_journal(fourier_attn_data: Dict[int, Di
 
         # 调整布局 - 为底部图例留空间
         if adaptive_style == 'lines':
-            # 增加底部留白，确保底部图例不与图像重叠
-            plt.tight_layout(rect=[0.02, 0.2, 1, 0.92])
-            plt.subplots_adjust(bottom=0.32)
+            # 增加底部留白，确保底部图例不与图像重叠；高度提高后适当减少 bottom 调整
+            plt.tight_layout(rect=[0.02, 0.18, 1, 0.92])
+            plt.subplots_adjust(bottom=0.26)
         else:
             # 单行布局无需行标签空间
             plt.tight_layout(rect=[0.02, 0.02, 1, 0.92])  # 为标题留空间

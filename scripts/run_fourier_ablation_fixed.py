@@ -19,7 +19,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import project modules
-from keys.model import HAGMRec
+from keys.model import SynRec
 from keys.temporal_rating_modules import AblationMode
 from keys.utils import evaluate_batched, partition_multi_domain
 
@@ -144,7 +144,7 @@ class FourierAblationExperiment:
             dataset = None
         
         # 创建模型实例
-        model = HAGMRec(
+        model = SynRec(
             user_num=getattr(self.args, 'user_num', 6040),
             item_num=getattr(self.args, 'item_num', 3416),
             args=self.args
@@ -163,7 +163,7 @@ class FourierAblationExperiment:
         print(f"✅ Model and data loaded successfully")
         return model, dataset
     
-    def run_ablation_mode(self, model: HAGMRec, mode: AblationMode, dataset) -> Dict[str, float]:
+    def run_ablation_mode(self, model: SynRec, mode: AblationMode, dataset) -> Dict[str, float]:
         """运行单个消融模式的实验"""
         print(f"🧪 Running ablation experiment: {mode.value}")
         
@@ -219,7 +219,7 @@ class FourierAblationExperiment:
         
         return result_metrics
     
-    def run_full_ablation_study(self, model: HAGMRec, dataset) -> Dict[str, Dict[str, float]]:
+    def run_full_ablation_study(self, model: SynRec, dataset) -> Dict[str, Dict[str, float]]:
         """运行完整的消融研究"""
         print("🔬 Starting full ablation study...")
         
