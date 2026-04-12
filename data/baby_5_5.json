@@ -1,0 +1,31 @@
+{
+  "dataset_info": {
+    "name": "baby",
+    "processed_time": "2026-03-12T10:14:53.374678",
+    "output_file": "data/baby_5_5.txt"
+  },
+  "basic_stats": {
+    "num_users": 19372,
+    "num_items": 7025,
+    "num_interactions": 160189,
+    "sparsity": 0.9988229039528013,
+    "sparsity_percent": 99.88229039528012,
+    "avg_sequence_length": 8.26909973157134,
+    "rating_range": {
+      "min": 1,
+      "max": 5
+    }
+  },
+  "sequence_length_distribution": {
+    "min": 5,
+    "max": 124,
+    "median": 6.0,
+    "std": 5.433906893551338
+  },
+  "item_popularity_distribution": {
+    "min": 5,
+    "max": 780,
+    "mean": 22.80270462633452,
+    "median": 11.0
+  }
+}

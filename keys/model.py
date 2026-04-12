@@ -21,6 +21,10 @@ class SynRec(torch.nn.Module):
         self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
         self.pos_emb = torch.nn.Embedding(args.maxlen+1, args.hidden_units, padding_idx=0)
         
+        # User Embedding for Instance-Level Transfer - Conditional to maintain state_dict compatibility
+        if getattr(args, 'shared_user_ids', False):
+            self.user_emb = torch.nn.Embedding(self.user_num+1, args.hidden_units, padding_idx=0)
+        
         # Enhanced Rating Module - uses optimized temporal-frequency encoder
         if getattr(args, 'use_rating_emb', False):
             rating_strategy = getattr(args, 'rating_strategy', 'temporal_fourier')  # default to temporal_fourier
@@ -64,7 +68,7 @@ class SynRec(torch.nn.Module):
             new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate, args=args)
             self.forward_layers.append(new_fwd_layer)
 
-    def log2feats(self, log_seqs, rating_seqs=None, domain_ids=None):
+    def log2feats(self, log_seqs, user_ids=None, rating_seqs=None, domain_ids=None):
         seqs = self.item_emb(log_seqs)
         seqs *= self.item_emb.embedding_dim ** 0.5
         
@@ -77,6 +81,13 @@ class SynRec(torch.nn.Module):
         
         pos_embedding = self.pos_emb(poss)
         seqs += pos_embedding
+        
+        # Add User Embedding if provided and initialized
+        if hasattr(self, 'user_emb') and user_ids is not None:
+            # user_ids: (batch_size,) -> (batch_size, 1, hidden_units)
+            u_emb = self.user_emb(user_ids).unsqueeze(1)
+            seqs += u_emb
+            
         seqs = self.emb_dropout(seqs)
 
         tl = seqs.shape[1]
@@ -180,7 +191,8 @@ class SynRec(torch.nn.Module):
         return log_feats, total_moe_loss_dict, total_viz_data
 
     def forward(self, user_ids, log_seqs, pos_seqs, neg_seqs, rating_seqs=None, domain_ids=None): # for training
-        log_feats, total_moe_loss_dict, viz_data = self.log2feats(log_seqs, rating_seqs, domain_ids)
+        # Pass user_ids to log2feats
+        log_feats, total_moe_loss_dict, viz_data = self.log2feats(log_seqs, user_ids=user_ids, rating_seqs=rating_seqs, domain_ids=domain_ids)
 
         pos_embs = self.item_emb(pos_seqs)
         neg_embs = self.item_emb(neg_seqs)
@@ -192,7 +204,8 @@ class SynRec(torch.nn.Module):
 
     def predict(self, user_ids, log_seqs, item_indices, domain_ids=None, rating_seqs=None): # for inference
         # Use rating_seqs for frequency-guided routing at inference when available
-        log_feats, _, _ = self.log2feats(log_seqs, rating_seqs=rating_seqs, domain_ids=domain_ids)
+        # Pass user_ids to log2feats
+        log_feats, _, _ = self.log2feats(log_seqs, user_ids=user_ids, rating_seqs=rating_seqs, domain_ids=domain_ids)
 
         final_feat = log_feats[:, -1, :] # only use last QKV classifier, a waste
 

@@ -395,12 +395,13 @@ def evaluate_batched(model, dataset, args, eval_type='valid'):
     
     return results
 
-def partition_multi_domain(fnames):
+def partition_multi_domain(fnames, shared_user_ids=False):
     """
     Loads and partitions multiple datasets from the SASRec.pytorch/python/data/ directory.
     - Handles integer IDs by offsetting them to ensure global uniqueness.
     - Assigns a domain_id to each user.
     - fnames: list of dataset names, e.g., ['beauty', 'games', 'ml-100k']
+    - shared_user_ids: if True, assumes input files already have global/shared IDs (no offsetting).
     """
     usernum = 0
     itemnum = 0
@@ -414,7 +415,7 @@ def partition_multi_domain(fnames):
     user_offset = 0
     item_offset = 0
 
-    print('{:-^100}'.format("Multi-domain data partitioning (Offset ID Strategy)"))
+    print('{:-^100}'.format(f"Multi-domain data partitioning (Offset Strategy: {'DISABLED (Linked)' if shared_user_ids else 'ENABLED (Disjoint)'})"))
 
     for domain_id, fname in enumerate(fnames):
         print(f"Processing domain {domain_id}: {fname}")
@@ -441,8 +442,26 @@ def partition_multi_domain(fnames):
                 local_itemnum = max(i, local_itemnum)
 
         # Record the item range for this domain
-        domain_start_item = item_offset + 1
-        domain_end_item = item_offset + local_itemnum
+        if shared_user_ids:
+             # In linked mode, we need to find the range by scanning the file or assume known?
+             # My process_linked_data.py makes item IDs disjoint but global.
+             # So for this domain, min item ID and max item ID in the file would be the range.
+             # Let's verify min/max from file content for range.
+             # Re-reading file is okay.
+             current_min_item = float('inf')
+             current_max_item = 0
+             with open(file_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split(delimiter)
+                    i = int(parts[1])
+                    current_min_item = min(current_min_item, i)
+                    current_max_item = max(current_max_item, i)
+             domain_start_item = current_min_item
+             domain_end_item = current_max_item
+        else:
+            domain_start_item = item_offset + 1
+            domain_end_item = item_offset + local_itemnum
+            
         domain_to_item_range[domain_id] = (domain_start_item, domain_end_item)
 
         # Second pass: load and process data with offsets
@@ -452,9 +471,16 @@ def partition_multi_domain(fnames):
                 if len(parts) < 3: 
                     print(f"Warning: Skipping line without rating: {line}")
                     continue # Skip lines without rating
-                # Apply offset to create global unique IDs
-                u = int(parts[0]) + user_offset
-                i = int(parts[1]) + item_offset
+                
+                if shared_user_ids:
+                    # No offsets, trust the pre-processing
+                    u = int(parts[0])
+                    i = int(parts[1])
+                else:
+                    # Apply offset to create global unique IDs
+                    u = int(parts[0]) + user_offset
+                    i = int(parts[1]) + item_offset
+                
                 r = int(float(parts[2])) # Ratings can be float, convert to int
                 
                 usernum = max(u, usernum)
@@ -463,12 +489,13 @@ def partition_multi_domain(fnames):
                 user_to_domain[u] = domain_id
         
         print(f"  Domain '{fname}' -> Local Users: {local_usernum}, Local Items: {local_itemnum}")
-        print(f"  Applying Offsets -> User: +{user_offset}, Item: +{item_offset}")
+        if not shared_user_ids:
+            print(f"  Applying Offsets -> User: +{user_offset}, Item: +{item_offset}")
+            # Update offsets for the next domain
+            user_offset += local_usernum
+            item_offset += local_itemnum
+            
         print(f"  Domain Item Range: [{domain_start_item}, {domain_end_item}]")
-        
-        # Update offsets for the next domain
-        user_offset += local_usernum
-        item_offset += local_itemnum
         print(f"  Updated Global Users: {usernum}, Global Items: {itemnum}")
 
     print('{:-^100}'.format("Final Data Statistics"))

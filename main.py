@@ -83,7 +83,7 @@ def parse_args():
     parser.add_argument('--eval_item_batch_size', default=4096, type=int, help='Batch size for item scoring during full-ranking evaluation')
     parser.add_argument('--eval_negative_sample_size', default=100, type=int, help='Number of negatives per test instance in sampled evaluation')
     parser.add_argument('--use_moe', default=True, type=str2bool, help='Enable/Disable MoE')
-    parser.add_argument('--use_datasets', nargs='+', default=['beauty_5_5', 'games_5_5', 'ml-1m_5_5'], help='Datasets to use for multi-domain training')
+    parser.add_argument('--use_datasets', nargs='+', default=['baby_5_5', 'tools_5_5', 'toys_5_5'], help='Datasets to use for multi-domain training')
     parser.add_argument('--use_domain_info', default=True, type=str2bool, help='Use domain info in MoE gating')
     parser.add_argument('--use_rating_emb', default=True, type=str2bool, help='Use rating embedding to inform gating')
     parser.add_argument('--use_gated_fusion', default=True, type=str2bool, help='Use a gated mechanism to fuse rating embedding')
@@ -106,9 +106,11 @@ def parse_args():
     parser.add_argument('--num_workers', default=8, type=int, help='Number of workers for data loading.')
     parser.add_argument('--swanlab_project', type=str, default='HAGMRec', help='SwanLab project name')
     parser.add_argument('--use_swanlab', default=True, type=str2bool, help='Enable/Disable SwanLab')
+    parser.add_argument('--patience', default=10, type=int, help='Early stopping patience')
     parser.add_argument('--baseline_preset', default=None, type=str, 
                         choices=[None, 'shared_bottom', 'vanilla_moe', 'sharedbase_wo_rating', 'synrec_full'],
                         help='Baseline preset to ensure fair, reproducible configurations')
+    parser.add_argument('--shared_user_ids', default=False, type=str2bool, help='If True, assumes input datasets share a global user ID space (no user offsets applied).')
     args = parser.parse_args()
     
     # Check compatibility between rating strategy and other options
@@ -181,7 +183,7 @@ def main():
     f.close()
 
     # global dataset
-    dataset = partition_multi_domain(args.use_datasets)
+    dataset = partition_multi_domain(args.use_datasets, shared_user_ids=args.shared_user_ids)
     [user_train, user_valid, user_test, user_to_domain, usernum, itemnum, domain_to_item_range] = dataset
     args.num_domains = len(args.use_datasets) # Save number of domains
     domain_map = {i: name for i, name in enumerate(args.use_datasets)}
@@ -301,6 +303,9 @@ def main():
     adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
 
     best_test_ndcg = 0.0
+    best_val_ndcg = 0.0
+    patience_counter = 0
+    prev_best_model_path = None # Keep track of the previous best model to delete it
     T = 0.0
     
     # Simplified visualization setup - data collection preserved for scripts
@@ -451,17 +456,35 @@ def main():
                     if swanlab.get_run() is not None:
                         swanlab.log(eval_log_dict)
 
-            performance_improved = t_test['overall_NDCG@10'] > best_test_ndcg   
+            # Early stopping logic based on Validation NDCG
+            performance_improved = t_valid['overall_NDCG@10'] > best_val_ndcg
             
-            # Performance improved logic simplified - only save models, no visualization
             if performance_improved:
-                best_test_ndcg = t_test['overall_NDCG@10']
-                print(f"✨ New best performance! Test NDCG@10: {best_test_ndcg:.4f}")
+                best_val_ndcg = t_valid['overall_NDCG@10']
+                best_test_ndcg = t_test['overall_NDCG@10'] # Update best test score for reference
+                patience_counter = 0 # Reset patience
+                
+                print(f"✨ New best Valid NDCG@10: {best_val_ndcg:.4f} (Test: {best_test_ndcg:.4f})")
                 folder = experiment_dir
                 fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
                 fname = fname.format(epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
                 model_path = os.path.join(folder, fname)
                 torch.save(model.state_dict(), model_path)
+                
+                # Delete previous best model to save space
+                if prev_best_model_path and os.path.exists(prev_best_model_path) and prev_best_model_path != model_path:
+                    try:
+                        os.remove(prev_best_model_path)
+                    except OSError as e:
+                        print(f"Warning: Could not delete previous model file {prev_best_model_path}: {e}")
+                
+                prev_best_model_path = model_path
+            else:
+                patience_counter += 1
+                print(f"⚠️ Performance did not improve. Patience: {patience_counter}/{args.patience}")
+                if patience_counter >= args.patience:
+                    print(f"🛑 Early stopping triggered after {epoch} epochs.")
+                    break
 
     
             # Format the metrics string for log file

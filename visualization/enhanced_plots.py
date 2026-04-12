@@ -647,12 +647,12 @@ def plot_expert_routing_journal(routing_weights: torch.Tensor,
         viz._apply_professional_styling(
             ax,
             title=f'Domain-Expert Routing Distribution{_epoch_title(epoch)}',
-            xlabel='Expert Models',
+            xlabel='Experts',
             ylabel='Domain Categories'
         )
         
         # 优化标签显示
-        ax.set_xticklabels(expert_labels, rotation=45, ha='right',
+        ax.set_xticklabels(expert_labels, rotation=0, ha='center',
                           fontsize=viz.config.font_size)
         ax.set_yticklabels(domain_labels, rotation=0, ha='right',
                           fontsize=viz.config.font_size)
@@ -916,9 +916,13 @@ def plot_inference_combined_overview(
         viz._apply_professional_styling(
             axes[0],
             title='(a) Domain-Expert Routing Distribution',
-            xlabel='Expert Models',
+            xlabel='Experts',
             ylabel='Domain Categories'
         )
+
+        # Keep x-axis labels horizontal for readability/consistency
+        axes[0].set_xticklabels(expert_labels_list, rotation=0, ha='center', fontsize=viz.config.font_size)
+        axes[0].set_yticklabels(domain_labels_list, rotation=0, ha='right', fontsize=viz.config.font_size)
 
         cbar = axes[0].collections[0].colorbar
         cbar.ax.tick_params(labelsize=viz.config.font_size-1)
@@ -1026,6 +1030,81 @@ def plot_inference_combined_overview(
         saved_files = viz._save_figure(fig, 'inference_overview_routing_tsne')
 
     return fig, saved_files
+
+
+def plot_tsne_continuous_coloring_journal(
+    embeddings_2d: torch.Tensor,
+    color_values: torch.Tensor,
+    title: str,
+    config: Optional[VisualizationConfig] = None,
+    save_plots: bool = True,
+    filename: str = 'tsne_continuous_coloring',
+    cmap: str = 'viridis'
+) -> Tuple[plt.Figure, List[str]]:
+    """绘制按连续变量上色的 t-SNE 散点图（期刊风格）。
+
+    Args:
+        embeddings_2d: [N, 2] 的二维嵌入。
+        color_values: [N] 连续上色变量（如 position 或 meta-gate 权重）。
+        title: 图标题。
+        config: 可视化配置。
+        save_plots: 是否保存。
+        filename: 保存文件名（不含扩展名）。
+        cmap: matplotlib colormap 名称。
+    """
+    viz = EnhancedVisualization(config)
+    saved_files: List[str] = []
+
+    if embeddings_2d.numel() == 0:
+        raise ValueError('t-SNE embeddings is empty')
+    if embeddings_2d.ndim != 2 or embeddings_2d.shape[1] != 2:
+        raise ValueError(f'Expected embeddings_2d shape [N,2], got {tuple(embeddings_2d.shape)}')
+
+    emb = embeddings_2d.detach().cpu().numpy()
+    vals = color_values.detach().cpu().numpy().reshape(-1)
+    if emb.shape[0] != vals.shape[0]:
+        raise ValueError(f'Length mismatch: embeddings={emb.shape[0]}, color_values={vals.shape[0]}')
+
+    fig, axes = viz._create_figure_layout('single', 1, 1)
+    ax = axes[0] if isinstance(axes, (list, tuple, np.ndarray)) else axes
+
+    try:
+        sc = ax.scatter(
+            emb[:, 0], emb[:, 1],
+            c=vals,
+            cmap=cmap,
+            alpha=viz.config.scatter_alpha,
+            s=22,
+            edgecolors='white',
+            linewidths=0.4
+        )
+
+        viz._apply_professional_styling(
+            ax,
+            title=title,
+            xlabel='t-SNE Dimension 1',
+            ylabel='t-SNE Dimension 2'
+        )
+
+        ax.grid(True, alpha=0.2, linestyle='--', linewidth=0.5)
+        ax.set_facecolor('#fafafa')
+        ax.set_aspect('equal', adjustable='box')
+
+        cbar = fig.colorbar(sc, ax=ax, shrink=0.9, aspect=25)
+        cbar.ax.tick_params(labelsize=viz.config.font_size-1)
+        cbar.set_label('Value', fontsize=viz.config.font_size, fontweight='normal')
+
+        if viz.config.tight_layout:
+            plt.tight_layout()
+
+        if save_plots:
+            saved_files = viz._save_figure(fig, filename)
+        return fig, saved_files
+    except Exception as e:
+        plt.close(fig)
+        raise RuntimeError(f'Continuous-color t-SNE plot failed: {e}')
+    finally:
+        gc.collect()
 
 def _intelligent_sampling(embeddings: np.ndarray, labels: np.ndarray, 
                          target_size: int = 500, strategy: str = 'auto') -> np.ndarray:

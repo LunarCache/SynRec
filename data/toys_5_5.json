@@ -1,0 +1,31 @@
+{
+  "dataset_info": {
+    "name": "toys",
+    "processed_time": "2026-03-12T10:15:38.542485",
+    "output_file": "data/toys_5_5.txt"
+  },
+  "basic_stats": {
+    "num_users": 19124,
+    "num_items": 11758,
+    "num_interactions": 165247,
+    "sparsity": 0.9992651115988654,
+    "sparsity_percent": 99.92651115988654,
+    "avg_sequence_length": 8.640817820539636,
+    "rating_range": {
+      "min": 1,
+      "max": 5
+    }
+  },
+  "sequence_length_distribution": {
+    "min": 5,
+    "max": 547,
+    "median": 6.0,
+    "std": 8.516333659848693
+  },
+  "item_popularity_distribution": {
+    "min": 5,
+    "max": 300,
+    "mean": 14.054005783296478,
+    "median": 9.0
+  }
+}

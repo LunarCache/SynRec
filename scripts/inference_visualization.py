@@ -45,6 +45,7 @@ try:
         EnhancedVisualization,
         plot_expert_routing_journal,
         plot_tsne_specialization_journal,
+        plot_tsne_continuous_coloring_journal,
         plot_inference_combined_overview,
         plot_multi_domain_fourier_comparison_journal,
         export_figure_journal,
@@ -106,6 +107,18 @@ def load_experiment_args(experiment_dir):
 
 def create_model_args(training_args, datasets, device):
     """根据训练参数创建模型配置"""
+    def _as_bool(v, default=False):
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        s = str(v).strip().lower()
+        if s in {'true', '1', 'yes', 'y', 't'}:
+            return True
+        if s in {'false', '0', 'no', 'n', 'f'}:
+            return False
+        return default
+
     class ModelArgs:
         def __init__(self):
             self.device = device
@@ -117,18 +130,18 @@ def create_model_args(training_args, datasets, device):
             self.l2_emb = float(training_args.get('l2_emb', 0.0))
             
             # MoE 参数
-            self.use_moe = True
+            self.use_moe = _as_bool(training_args.get('use_moe', True), True)
             self.moe_num_experts = int(training_args.get('moe_num_experts', 4))
             self.moe_k = int(training_args.get('moe_k', 2))
             self.moe_routing_strategy = training_args.get('moe_routing_strategy', 'shared_base')
-            self.moe_load_balancing = True
+            self.moe_load_balancing = _as_bool(training_args.get('moe_load_balancing', True), True)
             self.moe_balance_loss_weight = float(training_args.get('moe_balance_loss_weight', 0.01))
-            self.moe_noisy_gating = True
+            self.moe_noisy_gating = _as_bool(training_args.get('moe_noisy_gating', True), True)
             
             # Rating embedding 参数
-            self.use_rating_emb = True
+            self.use_rating_emb = _as_bool(training_args.get('use_rating_emb', True), True)
             self.rating_strategy = training_args.get('rating_strategy', 'temporal_fourier')
-            self.rating_pos_emb = False
+            self.rating_pos_emb = _as_bool(training_args.get('rating_pos_emb', False), False)
             
             # 采样参数（MoerecDataset需要）
             self.use_domain_sampling = str(training_args.get('use_domain_sampling', 'False')).lower() == 'true'
@@ -138,13 +151,13 @@ def create_model_args(training_args, datasets, device):
             
             # 领域相关参数
             self.num_domains = len(datasets)
-            self.use_domain_info = True
-            self.use_gated_fusion = True
+            self.use_domain_info = _as_bool(training_args.get('use_domain_info', True), True)
+            self.use_gated_fusion = _as_bool(training_args.get('use_gated_fusion', True), True)
             
             # 损失权重
-            self.use_specialization_loss = True
+            self.use_specialization_loss = _as_bool(training_args.get('use_specialization_loss', True), True)
             self.specialization_weight = float(training_args.get('specialization_weight', 0.01))
-            self.use_contrastive_loss = True
+            self.use_contrastive_loss = _as_bool(training_args.get('use_contrastive_loss', True), True)
             self.contrastive_weight = float(training_args.get('contrastive_weight', 0.01))
     
     return ModelArgs()
@@ -192,11 +205,14 @@ def collect_visualization_data(model, data_loader, args, domain_map, max_batches
     """
     print(f"{BOLD}{BLUE}🔍 Collecting visualization data during inference...{RESET}")
     
-    # 重要：为了生成可视化数据，需要将模型设置为训练模式
-    # 因为可视化数据的生成代码在 self.training 条件下
-    original_mode = model.training
-    model.train()  # 临时设置为训练模式以生成可视化数据
-    print(f"  ⚙️ Temporarily setting model to train mode for visualization data collection")
+    # 可视化数据在当前实现中不再依赖 self.training（只要 args.visualize=True）。
+    # 默认使用 eval() 以避免 Dropout 噪声；如需复现旧行为可用 --viz_use_train_mode true。
+    if getattr(args, 'viz_use_train_mode', False):
+        model.train()
+        print(f"  ⚙️ Using train mode for visualization data collection (dropout ON)")
+    else:
+        model.eval()
+        print(f"  ⚙️ Using eval mode for deterministic visualization data collection (dropout OFF)")
     
     # 初始化可视化数据收集器
     collected_data = {
@@ -205,6 +221,9 @@ def collect_visualization_data(model, data_loader, args, domain_map, max_batches
         'tsne_embeddings': [],
         'tsne_labels': [],
         'tsne_domains': [],
+        'tsne_positions': [],
+        'tsne_meta_shared': [],
+        'tsne_meta_domain': [],
         'fourier_data': []
     }
     
@@ -239,11 +258,43 @@ def collect_visualization_data(model, data_loader, args, domain_map, max_batches
                 
                 # 收集t-SNE数据
                 if 'tsne_embeddings' in viz_data:
-                    collected_data['tsne_embeddings'].append(viz_data['tsne_embeddings'].detach().cpu())
-                if 'tsne_labels' in viz_data:
-                    collected_data['tsne_labels'].append(viz_data['tsne_labels'].detach().cpu())
-                if 'tsne_domains' in viz_data:
-                    collected_data['tsne_domains'].append(viz_data['tsne_domains'].detach().cpu())
+                    # Filter out padding tokens using input seq (0 means padding)
+                    seq_flat = seq.view(-1)
+                    valid_mask = (seq_flat != 0).detach().cpu()
+
+                    emb = viz_data['tsne_embeddings'].detach().cpu()
+                    lab = viz_data.get('tsne_labels', None)
+                    dom = viz_data.get('tsne_domains', None)
+
+                    if valid_mask.numel() == emb.shape[0]:
+                        emb = emb[valid_mask]
+                        if lab is not None:
+                            lab = lab.detach().cpu()[valid_mask]
+                        if dom is not None:
+                            dom = dom.detach().cpu()[valid_mask]
+
+                        # sequence position (1..seq_len)
+                        batch_size = seq.shape[0]
+                        seq_len = seq.shape[1]
+                        pos_idx = torch.arange(1, seq_len + 1, device=seq.device).unsqueeze(0).expand(batch_size, -1).reshape(-1)
+                        pos_idx = pos_idx.detach().cpu()[valid_mask]
+                        collected_data['tsne_positions'].append(pos_idx)
+
+                        # meta-gate weights if available (shared_base only)
+                        if 'meta_gate_weights' in viz_data:
+                            mg = viz_data['meta_gate_weights'].detach().cpu()[valid_mask]  # [N,2]
+                            if mg.ndim == 2 and mg.shape[1] == 2:
+                                collected_data['tsne_meta_shared'].append(mg[:, 0])
+                                collected_data['tsne_meta_domain'].append(mg[:, 1])
+                    else:
+                        # Fallback: no filtering
+                        collected_data['tsne_positions'].append(torch.empty(0))
+
+                    collected_data['tsne_embeddings'].append(emb)
+                    if lab is not None:
+                        collected_data['tsne_labels'].append(lab)
+                    if dom is not None:
+                        collected_data['tsne_domains'].append(dom)
                 
                 # 收集Fourier数据（如果可用）
                 if 'fourier_rating_attention_detailed' in viz_data:
@@ -260,12 +311,8 @@ def collect_visualization_data(model, data_loader, args, domain_map, max_batches
                 print(f"⚠ Error processing batch {batch_idx}: {e}")
                 continue
     
-    # 恢复原始模型模式
-    if original_mode:
-        model.train()
-    else:
-        model.eval()
-    print(f"  ⚙️ Restored model to original mode: {'train' if original_mode else 'eval'}")
+    # 不强制恢复模式；脚本结束即退出
+    print(f"  ⚙️ Visualization data collection finished")
     
     # 处理收集的数据
     if collected_data['domain_expert_load_count'] > 0:
@@ -278,6 +325,18 @@ def collect_visualization_data(model, data_loader, args, domain_map, max_batches
         collected_data['combined_tsne_embeddings'] = torch.cat(collected_data['tsne_embeddings'], dim=0)
         collected_data['combined_tsne_labels'] = torch.cat(collected_data['tsne_labels'], dim=0)
         collected_data['combined_tsne_domains'] = torch.cat(collected_data['tsne_domains'], dim=0)
+
+        if collected_data['tsne_positions']:
+            try:
+                collected_data['combined_tsne_positions'] = torch.cat(collected_data['tsne_positions'], dim=0)
+            except Exception:
+                pass
+        if collected_data['tsne_meta_shared']:
+            try:
+                collected_data['combined_tsne_meta_shared'] = torch.cat(collected_data['tsne_meta_shared'], dim=0)
+                collected_data['combined_tsne_meta_domain'] = torch.cat(collected_data['tsne_meta_domain'], dim=0)
+            except Exception:
+                pass
     
     print(f"✓ Collected visualization data from {collected_data['domain_expert_load_count']} batches")
     print(f"  - Expert load data: {collected_data['domain_expert_load_count']} batches")
@@ -319,16 +378,18 @@ def generate_expert_routing_visualization(collected_data, domain_map, routing_st
             else:
                 domain_labels.append(raw_dataset_name)
         
+        num_experts_in_matrix = int(avg_load.shape[1])
+        num_domains = len(domain_map)
         if routing_strategy == 'shared_base':
-            expert_labels = [f"Expert {i}" for i in range(len(avg_load[0]))]
+            # shared_base heatmap is Domain -> Domain-Expert weights
+            expert_labels = [f"Domain Expert {i}" for i in range(num_experts_in_matrix)]
         else:
-            num_shared = 1 if len(avg_load[0]) > len(domain_map) else 0
-            expert_labels = []
-            for i in range(len(avg_load[0])):
-                if i < num_shared:
-                    expert_labels.append(f"Shared Expert {i}")
-                else:
-                    expert_labels.append(f"Domain Expert {i-num_shared}")
+            # vanilla heatmap is Domain -> All Experts (Shared + Domain)
+            num_shared = max(0, num_experts_in_matrix - num_domains)
+            expert_labels = [
+                (f"Shared Expert {i}" if i < num_shared else f"Domain Expert {i - num_shared}")
+                for i in range(num_experts_in_matrix)
+            ]
         
         # 使用增强可视化
         fig, saved_files = plot_expert_routing_journal(
@@ -491,11 +552,16 @@ def parse_args():
                        help='Save publication-quality figures')
     parser.add_argument('--tsne_sample_size', default=1000, type=int,
                        help='Maximum number of samples for t-SNE visualization')
+    parser.add_argument('--extra_tsne_colorings', nargs='*', default=[],
+                       choices=['position', 'meta_shared', 'meta_domain'],
+                       help='Generate extra t-SNE plots colored by continuous values (position/meta-gate weights).')
+    parser.add_argument('--viz_use_train_mode', default=False, type=str2bool,
+                       help='Collect visualization data in train() mode (dropout ON). Default false for deterministic eval().')
     
     # 输出参数
     parser.add_argument('--output_dir', default='exp/inference_visualization', type=str,
                        help='Output directory for visualizations')
-    parser.add_argument('--include_fourier', default=False, type=str2bool,
+    parser.add_argument('--include_fourier', default=True, type=str2bool,
                        help='Include Fourier frequency analysis visualization')
     
     # 设备参数
@@ -620,7 +686,7 @@ def main():
     # 收集可视化数据
     start_time = time.time()
     collected_data = collect_visualization_data(
-        model, viz_loader, model_args, domain_map, args.max_batches
+        model, viz_loader, args, domain_map, args.max_batches
     )
     collection_time = time.time() - start_time
     print(f"⏱️ Data collection completed in {collection_time:.2f} seconds")
@@ -636,6 +702,7 @@ def main():
     try:
         # 构造 1x3 综合图所需数据
         if 'avg_domain_expert_load' in collected_data and 'combined_tsne_embeddings' in collected_data:
+            from sklearn.manifold import TSNE
             avg_load = collected_data['avg_domain_expert_load']
             if isinstance(avg_load, np.ndarray):
                 avg_load = torch.from_numpy(avg_load)
@@ -648,23 +715,125 @@ def main():
                     domain_labels.append(_normalize_domain_name(raw_dataset_name))
                 except ImportError:
                     domain_labels.append(raw_dataset_name)
-            expert_labels = [f"Expert {i}" for i in range(len(avg_load[0]))]
+            # Provide consistent expert labels across routing strategies
+            num_experts_in_matrix = int(avg_load.shape[1])
+            num_domains = len(domain_map)
+            if model_args.moe_routing_strategy == 'shared_base':
+                expert_labels = [f"Domain Expert {i}" for i in range(num_experts_in_matrix)]
+            else:
+                num_shared = max(0, num_experts_in_matrix - num_domains)
+                expert_labels = [
+                    (f"Shared Expert {i}" if i < num_shared else f"Domain Expert {i - num_shared}")
+                    for i in range(num_experts_in_matrix)
+                ]
+
+            # ---- Precompute a single t-SNE embedding (and a single sampling) for all plots ----
+            emb_np = collected_data['combined_tsne_embeddings'].detach().cpu().numpy()
+            exp_np = collected_data['combined_tsne_labels'].detach().cpu().numpy()
+            dom_np = collected_data['combined_tsne_domains'].detach().cpu().numpy()
+
+            idx = np.arange(len(emb_np))
+            if len(emb_np) > args.tsne_sample_size:
+                rng = np.random.default_rng(args.seed)
+                idx = rng.choice(len(emb_np), args.tsne_sample_size, replace=False)
+            emb_np = emb_np[idx]
+            exp_np = exp_np[idx]
+            dom_np = dom_np[idx]
+
+            if emb_np.ndim == 2 and emb_np.shape[1] == 2:
+                emb2d = emb_np
+            else:
+                perplexity = int(min(30, max(5, len(emb_np) // 4)))
+                tsne = TSNE(n_components=2, perplexity=perplexity, learning_rate=200, max_iter=1000, random_state=42)
+                emb2d = tsne.fit_transform(emb_np)
+
+            emb2d_t = torch.from_numpy(emb2d)
+            exp_t = torch.from_numpy(exp_np)
+            dom_t = torch.from_numpy(dom_np)
 
             fig, files = plot_inference_combined_overview(
                 routing_weights=avg_load,
                 domain_labels_list=domain_labels,
                 expert_labels_list=expert_labels,
-                embeddings=collected_data['combined_tsne_embeddings'],
-                expert_assignments=collected_data['combined_tsne_labels'],
-                domain_assignments=collected_data['combined_tsne_domains'],
+                embeddings=emb2d_t,
+                expert_assignments=exp_t,
+                domain_assignments=dom_t,
                 domain_map=domain_map,
                 config=viz_config,
                 save_plots=args.save_publication_figs,
-                max_tsne_samples=args.tsne_sample_size,
+                max_tsne_samples=max(args.tsne_sample_size, len(emb2d)),
             )
             if files:
                 generated_files.extend(files)
             plt.close(fig)
+
+            # Extra t-SNE continuous colorings
+            if args.extra_tsne_colorings:
+                pos_all = collected_data.get('combined_tsne_positions', None)
+                mg_shared_all = collected_data.get('combined_tsne_meta_shared', None)
+                mg_domain_all = collected_data.get('combined_tsne_meta_domain', None)
+
+                def _subset(t):
+                    if t is None:
+                        return None
+                    t_cpu = t.detach().cpu()
+                    if len(t_cpu) >= len(idx):
+                        return t_cpu[idx]
+                    return None
+
+                pos_sub = _subset(pos_all)
+                mg_shared_sub = _subset(mg_shared_all)
+                mg_domain_sub = _subset(mg_domain_all)
+
+                for mode in args.extra_tsne_colorings:
+                    if mode == 'position':
+                        if pos_sub is None or len(pos_sub) == 0:
+                            print("⚠ No sequence position data available for t-SNE coloring")
+                            continue
+                        fig2, files2 = plot_tsne_continuous_coloring_journal(
+                            embeddings_2d=emb2d_t,
+                            color_values=pos_sub,
+                            title='t-SNE Colored by Sequence Position',
+                            config=viz_config,
+                            save_plots=args.save_publication_figs,
+                            filename='tsne_colored_by_position',
+                            cmap='viridis'
+                        )
+                        if files2:
+                            generated_files.extend(files2)
+                        plt.close(fig2)
+                    elif mode == 'meta_shared':
+                        if mg_shared_sub is None or len(mg_shared_sub) == 0:
+                            print("⚠ No meta-gate weights available (shared_base only)")
+                            continue
+                        fig2, files2 = plot_tsne_continuous_coloring_journal(
+                            embeddings_2d=emb2d_t,
+                            color_values=mg_shared_sub,
+                            title='t-SNE Colored by Meta-Gate g_shared',
+                            config=viz_config,
+                            save_plots=args.save_publication_figs,
+                            filename='tsne_colored_by_meta_g_shared',
+                            cmap='plasma'
+                        )
+                        if files2:
+                            generated_files.extend(files2)
+                        plt.close(fig2)
+                    elif mode == 'meta_domain':
+                        if mg_domain_sub is None or len(mg_domain_sub) == 0:
+                            print("⚠ No meta-gate weights available (shared_base only)")
+                            continue
+                        fig2, files2 = plot_tsne_continuous_coloring_journal(
+                            embeddings_2d=emb2d_t,
+                            color_values=mg_domain_sub,
+                            title='t-SNE Colored by Meta-Gate g_domain',
+                            config=viz_config,
+                            save_plots=args.save_publication_figs,
+                            filename='tsne_colored_by_meta_g_domain',
+                            cmap='plasma'
+                        )
+                        if files2:
+                            generated_files.extend(files2)
+                        plt.close(fig2)
         else:
             tsne_result = generate_tsne_specialization_visualization(
                 collected_data, domain_map, args, viz_config

@@ -1,0 +1,31 @@
+{
+  "dataset_info": {
+    "name": "tools",
+    "processed_time": "2026-03-12T10:15:10.954249",
+    "output_file": "data/tools_5_5.txt"
+  },
+  "basic_stats": {
+    "num_users": 16533,
+    "num_items": 10156,
+    "num_interactions": 133603,
+    "sparsity": 0.999204313751863,
+    "sparsity_percent": 99.9204313751863,
+    "avg_sequence_length": 8.080989536079356,
+    "rating_range": {
+      "min": 1,
+      "max": 5
+    }
+  },
+  "sequence_length_distribution": {
+    "min": 5,
+    "max": 142,
+    "median": 6.0,
+    "std": 5.862963239806133
+  },
+  "item_popularity_distribution": {
+    "min": 5,
+    "max": 504,
+    "mean": 13.155080740448996,
+    "median": 8.0
+  }
+}

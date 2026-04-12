@@ -257,18 +257,25 @@ class FGMoEFFN(nn.Module):
                     expert_load = expert_usage / (expert_usage.sum() + 1e-8)
                     lb_loss = self.balance_loss_weight * self.cv_squared(expert_load) * self.num_domain_experts
                     loss_dict['load_balancing'] = lb_loss
-            
-            if (self.load_balancing or self.args.visualize) and self.training:
-                # 负载均衡仅基于领域专家的门控分数
+
+            # Visualization data generation:
+            # - During training: keep legacy behavior (also emit expert_load when load balancing is on)
+            # - During eval: emit viz_data only when args.visualize=True (for deterministic inference plots)
+            emit_viz = bool(getattr(self.args, 'visualize', False))
+            if (self.training and (self.load_balancing or emit_viz)) or (not self.training and emit_viz):
+                # 负载统计基于领域专家的门控分数
                 expert_usage = gate_scores.sum(dim=0)
                 expert_load = expert_usage / (expert_usage.sum() + 1e-8)
                 viz_data['expert_load'] = expert_load.detach()
-                
+
                 # Generate additional viz_data when visualization is enabled (for scripts)
-                if self.args.visualize and domain_ids is not None:
+                if emit_viz and domain_ids is not None:
                     token_domain_ids = domain_ids.unsqueeze(1).expand(-1, seq_len).reshape(-1)
-                    
-                    # --- 恢复并适配热力图数据生成 ---
+
+                    # Meta-gate weights for inference-time analysis
+                    # [:, 0] -> shared branch weight, [:, 1] -> domain branch weight
+                    viz_data['meta_gate_weights'] = meta_gate_weights.detach()
+
                     # 新的热力图将显示 领域 -> 领域专家 的路由权重
                     domain_expert_load = torch.zeros(self.num_domain_experts, self.num_domain_experts, device=output.device)
                     domain_expert_load.scatter_add_(0, token_domain_ids.unsqueeze(1).expand(-1, self.num_domain_experts), gate_scores)
@@ -303,24 +310,35 @@ class FGMoEFFN(nn.Module):
             
             output = weighted_sum.view(batch_size, seq_len, self.hidden_units)
 
-            if (self.load_balancing or self.args.visualize) and self.training:
-                expert_usage = torch.zeros(self.num_experts, device=output.device).scatter_add_(0, top_k_indices.flatten(), top_k_scores_normalized.flatten())
+            # Load balancing loss only during training
+            if self.training and self.load_balancing:
+                expert_usage = torch.zeros(self.num_experts, device=output.device).scatter_add_(
+                    0, top_k_indices.flatten(), top_k_scores_normalized.flatten()
+                )
+                expert_load = expert_usage / (expert_usage.sum() + 1e-8)
+                lb_loss = self.balance_loss_weight * self.cv_squared(expert_load) * self.num_experts
+                loss_dict['load_balancing'] = lb_loss
+
+            # Visualization data generation (see shared_base branch for rationale)
+            emit_viz = bool(getattr(self.args, 'visualize', False))
+            if (self.training and (self.load_balancing or emit_viz)) or (not self.training and emit_viz):
+                # expert_load reflects actual sparse usage under Top-K (more faithful than dense gate_scores)
+                expert_usage = torch.zeros(self.num_experts, device=output.device).scatter_add_(
+                    0, top_k_indices.flatten(), top_k_scores_normalized.flatten()
+                )
                 expert_load = expert_usage / (expert_usage.sum() + 1e-8)
                 viz_data['expert_load'] = expert_load.detach()
 
-                if self.load_balancing:
-                    lb_loss = self.balance_loss_weight * self.cv_squared(expert_load) * self.num_experts
-                    loss_dict['load_balancing'] = lb_loss
-
                 # Generate additional viz_data when visualization is enabled (for scripts)
-                if self.args.visualize and domain_ids is not None:
+                if emit_viz and domain_ids is not None:
                     token_domain_ids = domain_ids.unsqueeze(1).expand(-1, seq_len).reshape(-1)
                     domain_expert_load = torch.zeros(self.num_domain_experts, self.num_experts, device=output.device)
+                    # NOTE: domain_expert_load uses dense gate_scores (routing preference), not Top-K usage.
                     domain_expert_load.scatter_add_(0, token_domain_ids.unsqueeze(1).expand(-1, self.num_experts), gate_scores)
                     domain_token_counts = torch.bincount(token_domain_ids, minlength=self.num_domain_experts).float()
                     domain_expert_load = domain_expert_load / (domain_token_counts.unsqueeze(1) + 1e-8)
                     viz_data['domain_expert_load'] = domain_expert_load.detach()
-                    
+
                     viz_data['tsne_embeddings'] = weighted_sum.detach()
                     viz_data['tsne_labels'] = torch.argmax(gate_scores, dim=1).detach()
                     viz_data['tsne_domains'] = token_domain_ids.detach()
