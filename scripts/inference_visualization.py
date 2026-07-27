@@ -178,7 +178,19 @@ def setup_enhanced_visualization(args):
         
         # 应用期刊样式
         apply_journal_style(args.journal_style)
-        
+
+        # 放大字体（仍为无衬线 Liberation Sans，仅改字号）以匹配 Fig.4/Fig.5 在
+        # \textwidth 下的可读性；不改变字体族、不改变绘图数据逻辑。
+        config.font_size = 20
+        config.label_size = 21
+        config.title_size = 19
+        config.legend_size = 20
+        import matplotlib as _mpl
+        _mpl.rcParams.update({
+            'font.size': 20, 'axes.titlesize': 19, 'axes.labelsize': 21,
+            'xtick.labelsize': 20, 'ytick.labelsize': 20, 'legend.fontsize': 20,
+        })
+
         print(f"✓ Enhanced visualization configured for {args.journal_style} journal style")
         print(f"  DPI: {config.dpi}, Format: {config.figure_format}")
         print(f"  Output: {config.output_directory}")

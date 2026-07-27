@@ -756,9 +756,9 @@ def _plot_metric_boxplot(ax, domain_data: Dict[int, List[Dict]], domains: List[i
                 patch.set_facecolor(colors_list[i])
                 patch.set_alpha(0.7)
         
-        ax.set_xticklabels(domain_labels, rotation=0, fontsize=10)
-        ax.set_ylabel(ylabel, fontsize=11)
-        ax.set_title(title, fontsize=12, fontweight='bold')
+        ax.set_xticklabels(domain_labels, rotation=0, fontsize=14)
+        ax.set_ylabel(ylabel, fontsize=14)
+        ax.set_title(title, fontsize=15, fontweight='bold')
         ax.grid(True, alpha=0.3)
         
         # 确保纵轴范围合适 - 针对R²值的特殊处理
@@ -773,8 +773,8 @@ def _plot_metric_boxplot(ax, domain_data: Dict[int, List[Dict]], domains: List[i
     else:
         ax.text(0.5, 0.5, 'Insufficient data\nfor comparison', 
                ha='center', va='center', transform=ax.transAxes, 
-               fontsize=10, style='italic')
-        ax.set_title(title, fontsize=12, fontweight='bold')
+               fontsize=14, style='italic')
+        ax.set_title(title, fontsize=15, fontweight='bold')
     
     # 在设置完所有内容后添加子图标签，使用更安全的位置
     if subplot_label:
@@ -836,17 +836,17 @@ def _plot_peak_frequency_analysis(ax, domain_data: Dict[int, List[Dict]], domain
                     ax.hist(periods, bins=15, alpha=0.6, color=color, 
                            label=label.split('\n')[0], density=True)
         
-        ax.set_xlabel('Peak Period (Time Steps)', fontsize=11)
-        ax.set_ylabel('Density', fontsize=11)
-        ax.set_title('Peak Frequency Patterns by Domain', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=9)
+        ax.set_xlabel('Peak Period (Time Steps)', fontsize=14)
+        ax.set_ylabel('Density', fontsize=14)
+        ax.set_title('Peak Frequency Patterns by Domain', fontsize=15, fontweight='bold')
+        ax.legend(fontsize=13)
         ax.grid(True, alpha=0.3)
         ax.set_xlim(1, min(50, max(all_periods) if len(all_periods) > 0 else 20))
     else:
         ax.text(0.5, 0.5, 'No peak frequency\ndata available', 
                ha='center', va='center', transform=ax.transAxes, 
-               fontsize=10, style='italic')
-        ax.set_title('Peak Frequency Patterns', fontsize=12, fontweight='bold')
+               fontsize=14, style='italic')
+        ax.set_title('Peak Frequency Patterns', fontsize=15, fontweight='bold')
     
     # 添加子图标签
     if subplot_label:
@@ -887,8 +887,8 @@ def _plot_lowfrac_across_policies(ax, domain_data: Dict[int, List[Dict]], domain
     if not has_data:
         ax.text(0.5, 0.5, 'No policy comparison\ndata available', 
                ha='center', va='center', transform=ax.transAxes, 
-               fontsize=10, style='italic')
-        ax.set_title('LowFrac across Policies', fontsize=12, fontweight='bold')
+               fontsize=14, style='italic')
+        ax.set_title('LowFrac across Policies', fontsize=15, fontweight='bold')
         return
     
     # 计算位置
@@ -941,10 +941,10 @@ def _plot_lowfrac_across_policies(ax, domain_data: Dict[int, List[Dict]], domain
         # 设置 x 轴
         domain_labels = [domain_names.get(d, f'Domain {d}') for d in domains]
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(domain_labels, fontsize=10)
+        ax.set_xticklabels(domain_labels, fontsize=14)
         
-        ax.set_ylabel('Low-Frequency Energy Fraction', fontsize=11)
-        ax.set_title('LowFrac across Policies', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Low-Frequency Energy Fraction', fontsize=14)
+        ax.set_title('LowFrac across Policies', fontsize=15, fontweight='bold')
         ax.grid(True, alpha=0.3)
         
         # 添加图例（简化版）
@@ -953,12 +953,12 @@ def _plot_lowfrac_across_policies(ax, domain_data: Dict[int, List[Dict]], domain
             Patch(facecolor='gray', alpha=0.8, label='Model Policy'),
             Patch(facecolor='gray', alpha=0.5, label='Energy80 Policy')
         ]
-        ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=13)
     else:
         ax.text(0.5, 0.5, 'Insufficient policy\ndata for comparison', 
                ha='center', va='center', transform=ax.transAxes, 
-               fontsize=10, style='italic')
-        ax.set_title('LowFrac across Policies', fontsize=12, fontweight='bold')
+               fontsize=14, style='italic')
+        ax.set_title('LowFrac across Policies', fontsize=15, fontweight='bold')
     
     # 添加子图标签
     if subplot_label:
@@ -974,8 +974,8 @@ def _plot_domain_metrics_summary(ax, domain_stats: Dict[int, Dict], domains: Lis
     if len(domain_stats) <= 1:
         ax.text(0.5, 0.5, 'Insufficient domain\nstatistics available', 
                ha='center', va='center', transform=ax.transAxes, 
-               fontsize=10, style='italic')
-        ax.set_title('Domain Metrics Summary', fontsize=12, fontweight='bold')
+               fontsize=14, style='italic')
+        ax.set_title('Domain Metrics Summary', fontsize=15, fontweight='bold')
         return
     
     # 准备数据表格
@@ -1039,7 +1039,7 @@ def _plot_domain_metrics_summary(ax, domain_stats: Dict[int, Dict], domains: Lis
             cell.set_edgecolor('black')
             cell.set_linewidth(0.5)
     
-    ax.set_title('Domain Performance Summary', fontsize=12, fontweight='bold')
+    ax.set_title('Domain Performance Summary', fontsize=15, fontweight='bold')
     
     # 添加子图标签
     if subplot_label:
@@ -1125,7 +1125,7 @@ def generate_domain_comparison_plots(domain_data: Dict[int, List[Dict]], domain_
     legend_elements = [Patch(facecolor=domain_colors[d], alpha=0.8, label=domain_names[d]) 
                       for d in domains if d in domain_colors]
     fig.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, 0.02), 
-              ncol=len(domains), fontsize=12, frameon=True, fancybox=True, shadow=True)
+              ncol=len(domains), fontsize=15, frameon=True, fancybox=True, shadow=True)
     
     # 保存统一图表，优化布局
     plt.tight_layout(rect=[0, 0.08, 1, 0.92])  # 为标题和图例预留足够空间

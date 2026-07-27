@@ -70,12 +70,13 @@ def parse_args():
     p.add_argument('--use_swanlab', type=str, default='false', choices=['true','false'])
     p.add_argument('--skip_if_exists', action='store_true', help='若对应 log.txt 已存在则跳过训练')
     p.add_argument('--no_run', action='store_true', help='不执行训练, 仅解析已有日志与作图')
+    p.add_argument('--from_csv', type=str, default='', help='直接从已有结果CSV(如 mypaper/.../*_domain_results.csv)读取数据绘图，跳过日志解析/训练')
     p.add_argument('--output_dir', type=str, default='exp/contrastive_weight_sweep', help='输出图与结果表保存目录')
     p.add_argument('--extra_main_args', type=str, default='', help='附加传给 main.py 的原样参数字符串')
     p.add_argument('--journal_style', type=str, default='nature', help='期刊风格: nature|science|cell|custom')
-    p.add_argument('--line_width', type=float, default=1.0, help='折线宽度(默认1.0，可选更小如0.8)')
-    p.add_argument('--marker_size', type=float, default=5.5)
-    p.add_argument('--font_size', type=int, default=10)
+    p.add_argument('--line_width', type=float, default=2.2, help='折线宽度')
+    p.add_argument('--marker_size', type=float, default=7.0)
+    p.add_argument('--font_size', type=int, default=24)
     p.add_argument('--x_mode', type=str, default='linear', choices=['linear','log','categorical'], help='contrastive_weight 横轴显示模式')
     p.add_argument('--log_zero_shift', type=float, default=1e-5, help='log 模式下替换 0 的微小正数')
     # 细节放大参数
@@ -205,19 +206,44 @@ def main():
     domain_ids_order: List[str] = []  # 仅 domain_i
     has_weighted = False
 
-    for w in args.weights:
-        log_path = run_training(w, args)
-        per_domain = parse_log_per_domain(log_path)
-        if per_domain and not domain_ids_order:
-            domain_ids_order = sorted([k for k in per_domain.keys() if k.startswith('domain_')], key=lambda x: int(x.split('_')[1]))
-        has_weighted = has_weighted or ('overall_weighted' in per_domain)
-        rec = {'contrastive_weight': w, 'log_path': str(log_path)}
-        for d in per_domain.keys():
-            rec[f'{d}_best_epoch'] = per_domain[d]['best_epoch']
-            rec[f'{d}_NDCG@10'] = per_domain[d]['NDCG@10']
-            rec[f'{d}_HR@10'] = per_domain[d]['HR@10']
-        print(f"weight={w} -> {per_domain}")
-        all_weight_records.append(rec)
+    if args.from_csv:
+        # 直接读取已有结果CSV（原始数据），复用其逐域/加权数值，不再解析当前 exp 日志。
+        cdf = pd.read_csv(args.from_csv)
+        dom_cols = [c[:-len('_NDCG@10')] for c in cdf.columns if c.endswith('_NDCG@10')]
+        for _, row in cdf.iterrows():
+            per_domain = {}
+            for d in dom_cols:
+                nk, hk, ek = f'{d}_NDCG@10', f'{d}_HR@10', f'{d}_best_epoch'
+                if nk in row and pd.notna(row[nk]):
+                    per_domain[d] = {
+                        'best_epoch': int(row[ek]) if ek in row and pd.notna(row[ek]) else -1,
+                        'NDCG@10': float(row[nk]),
+                        'HR@10': float(row[hk]) if hk in row and pd.notna(row[hk]) else float('nan'),
+                    }
+            if per_domain and not domain_ids_order:
+                domain_ids_order = sorted([k for k in per_domain if k.startswith('domain_')], key=lambda x: int(x.split('_')[1]))
+            has_weighted = has_weighted or ('overall_weighted' in per_domain)
+            rec = {'contrastive_weight': float(row['contrastive_weight']), 'log_path': args.from_csv}
+            for d in per_domain.keys():
+                rec[f'{d}_best_epoch'] = per_domain[d]['best_epoch']
+                rec[f'{d}_NDCG@10'] = per_domain[d]['NDCG@10']
+                rec[f'{d}_HR@10'] = per_domain[d]['HR@10']
+            print(f"[from_csv] weight={rec['contrastive_weight']} -> {list(per_domain.keys())}")
+            all_weight_records.append(rec)
+    else:
+        for w in args.weights:
+            log_path = run_training(w, args)
+            per_domain = parse_log_per_domain(log_path)
+            if per_domain and not domain_ids_order:
+                domain_ids_order = sorted([k for k in per_domain.keys() if k.startswith('domain_')], key=lambda x: int(x.split('_')[1]))
+            has_weighted = has_weighted or ('overall_weighted' in per_domain)
+            rec = {'contrastive_weight': w, 'log_path': str(log_path)}
+            for d in per_domain.keys():
+                rec[f'{d}_best_epoch'] = per_domain[d]['best_epoch']
+                rec[f'{d}_NDCG@10'] = per_domain[d]['NDCG@10']
+                rec[f'{d}_HR@10'] = per_domain[d]['HR@10']
+            print(f"weight={w} -> {per_domain}")
+            all_weight_records.append(rec)
 
     if not has_weighted and args.infer_weighted:
         if not domain_ids_order:
@@ -266,6 +292,8 @@ def main():
         cfg.dpi = 1000
         cfg.font_size = args.font_size
         cfg.legend_size = args.font_size - 1
+        cfg.label_size = args.font_size + 4
+        cfg.title_size = 21
         cfg.line_width = args.line_width
         cfg.marker_size = args.marker_size
         setup_visualization_environment(cfg)
@@ -288,6 +316,8 @@ def main():
             'legend.frameon': False,
             'grid.color': '#CCCCCC',
             'grid.linewidth': 0.6,
+            'xtick.labelsize': args.font_size,
+            'ytick.labelsize': args.font_size,
         })
 
     # 绘制域级子图
@@ -295,7 +325,7 @@ def main():
     if has_weighted:
         plot_units.append('overall_weighted')
     rows, cols = 2, 2
-    fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 3.1*rows), dpi=1000)
+    fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 3.1*rows), dpi=600)
     if not isinstance(axes, (list, tuple, plt.Axes)):
         axes = axes
     axes_list = axes.flatten() if hasattr(axes, 'flatten') else [axes]
@@ -388,7 +418,7 @@ def main():
     # 先紧凑布局, 给底部留空间放图例
     plt.tight_layout(rect=[0,0.05,1,0.92])
     # 全局标题（SCI风格简洁）
-    fig.suptitle('Contrastive Weight – Domain-wise Top-K Metrics', fontsize=13, y=0.97, fontweight='bold')
+    fig.suptitle('Contrastive Weight – Domain-wise Top-K Metrics', fontsize=17, y=0.97, fontweight='bold')
     if first_handles is not None:
         # 底部中央图例
         fig.legend(first_handles, first_labels, loc='lower center', ncol=2, bbox_to_anchor=(0.5, 0.01), frameon=False)
@@ -396,14 +426,14 @@ def main():
     fig_base = Path(args.output_dir) / 'contrastive_weight_domains'
     for fmt in ['png','pdf']:
         out_path = f'{fig_base}.{fmt}'
-        fig.savefig(out_path, dpi=1000, bbox_inches='tight', pad_inches=0.05)
+        fig.savefig(out_path, dpi=600, bbox_inches='tight', pad_inches=0.05)
         print(f"图已保存: {out_path}")
 
     # Delta 图
     if args.plot_delta:
         base_w = weights_sorted[0]
         base_row = df[df['contrastive_weight'] == base_w].iloc[0]
-        fig2, axes2 = plt.subplots(rows, cols, figsize=(4*cols, 3.0*rows), dpi=1000)
+        fig2, axes2 = plt.subplots(rows, cols, figsize=(4*cols, 3.8*rows), dpi=600)
         axes2_list = axes2.flatten() if hasattr(axes2, 'flatten') else [axes2]
         for idx, unit_id in enumerate(plot_units):
             ax2 = axes2_list[idx]
@@ -433,7 +463,7 @@ def main():
             line1, = ax2.plot(x_positions, y_ndcg, marker='o', label='ΔNDCG@10', color=c1, linewidth=args.line_width)
             line2, = ax2.plot(x_positions, y_hr, marker='s', label='ΔHR@10', color=c2, linewidth=args.line_width)
             ax2.set_title(dom_name)
-            ax2.set_xlabel('Contrastive Weight')
+            ax2.set_xlabel('')
             ax2.set_ylabel('Change (%)' if args.delta_as_percent else 'Absolute Δ')
             ax2.axhline(0, color='#888888', linewidth=0.8)
             ax2.grid(alpha=0.3)
@@ -469,13 +499,13 @@ def main():
         plt.tight_layout(rect=[0,0.05,1,0.92])
         # 更加标准化的 Delta 标题，加入前缀 “Contrastive Weight – ” 并区分 Relative / Absolute
         title_delta = 'Relative Change' if args.delta_as_percent else 'Absolute Change'
-        fig2.suptitle(f'Contrastive Weight – {title_delta} vs. Base', fontsize=13, y=0.97, fontweight='bold')
+        fig2.suptitle(f'Contrastive Weight – {title_delta} vs. Base', fontsize=17, y=0.97, fontweight='bold')
         if 'second_handles' in locals():
             fig2.legend(second_handles, second_labels, loc='lower center', ncol=2, bbox_to_anchor=(0.5, 0.01), frameon=False)
         fig2_base = Path(args.output_dir) / 'contrastive_weight_domains_delta'
         for fmt in ['png','pdf']:
             out_path2 = f'{fig2_base}.{fmt}'
-            fig2.savefig(out_path2, dpi=1000, bbox_inches='tight', pad_inches=0.05)
+            fig2.savefig(out_path2, dpi=600)
             print(f"Delta 图已保存: {out_path2}")
 
     print('\n完成。')

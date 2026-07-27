@@ -45,18 +45,6 @@ python scripts/run_fourier_ablation_statistical.py
 python scripts/batch_viz_stats.py
 ```
 
-### Testing
-```bash
-# Run system tests
-python test_system.py
-
-# Run integration tests
-python test_integration.py
-
-# Gradient checking
-python gradient_check.py
-```
-
 ### Data Processing
 ```bash
 # Process raw datasets

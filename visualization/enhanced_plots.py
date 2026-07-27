@@ -872,6 +872,8 @@ def plot_inference_combined_overview(
 
     # 1x3 布局
     fig, axes = viz._create_figure_layout('single', 1, 3)
+    # 统一非附录正文图的画布宽高（15 x 5.0，宽高比≈3.0），缓解过宽过扁、字体偏小（仅排版）
+    fig.set_size_inches(15, 5.0)
 
     # --- 左：专家路由热力图 ---
     try:
@@ -886,8 +888,10 @@ def plot_inference_combined_overview(
         use_prob_scale = (data_max <= 1.05) and (data_min >= -1e-6)
         cbar_kwargs = {
             'label': 'Routing Weight',
-            'shrink': 0.8,
-            'aspect': 20
+            'orientation': 'horizontal',
+            'shrink': 0.85,
+            'aspect': 30,
+            'pad': 0.28,
         }
         if use_prob_scale:
             cbar_kwargs['ticks'] = [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -900,7 +904,7 @@ def plot_inference_combined_overview(
             ax=axes[0],
             xticklabels=expert_labels_list,
             yticklabels=domain_labels_list,
-            cbar_kws=cbar_kwargs,
+            cbar=False,
             vmin=0.0 if use_prob_scale else None,
             vmax=1.0 if use_prob_scale else None,
             square=False,
@@ -921,10 +925,20 @@ def plot_inference_combined_overview(
         )
 
         # Keep x-axis labels horizontal for readability/consistency
-        axes[0].set_xticklabels(expert_labels_list, rotation=0, ha='center', fontsize=viz.config.font_size)
-        axes[0].set_yticklabels(domain_labels_list, rotation=0, ha='right', fontsize=viz.config.font_size)
+        # 显示用的短标签（避免 "Domain Expert N" 过长导致横轴刻度重叠）；仅影响刻度文本渲染
+        _xticklabels_disp = [str(s).replace('Domain Expert', 'Expert').replace('Domain ', '') for s in expert_labels_list]
+        axes[0].set_xticklabels(_xticklabels_disp, rotation=0, ha='center', fontsize=viz.config.font_size)
+        _ylabels_disp = [str(d).replace('MovieLens', 'Movies') for d in domain_labels_list]
+        axes[0].set_yticklabels(_ylabels_disp, rotation=90, ha='center', va='center', fontsize=viz.config.font_size)
+        # 让竖排域标签与热力图的间距和横轴刻度的间距一致
+        axes[0].tick_params(axis='y', pad=10)
 
-        cbar = axes[0].collections[0].colorbar
+        # 横向色条放在子图(a)下方留白处的独立轴：不挤压热力图（避免(a)过扁），
+        # 也让 (a) 与 (b)(c) 的绘图区保持等高、底部对齐。
+        cax = axes[0].inset_axes([0.0, -0.24, 1.0, 0.045])
+        cbar = fig.colorbar(axes[0].collections[0], cax=cax, orientation='horizontal')
+        if use_prob_scale:
+            cbar.set_ticks([0.0, 0.25, 0.5, 0.75, 1.0])
         cbar.ax.tick_params(labelsize=viz.config.font_size-1)
         cbar.set_label('Routing Weight', fontsize=viz.config.font_size, fontweight='normal')
     except Exception as e:
@@ -974,9 +988,9 @@ def plot_inference_combined_overview(
             xlabel='t-SNE Dimension 1',
             ylabel='t-SNE Dimension 2'
         )
-        legend1 = axes[1].legend(loc='upper right', fontsize=viz.config.legend_size-1,
-                      frameon=True, fancybox=False, shadow=False, framealpha=0.85,
-                      borderpad=0.5, columnspacing=0.8, handletextpad=0.5, markerscale=1.0)
+        legend1 = axes[1].legend(loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=8,
+                      fontsize=viz.config.legend_size-1, frameon=False,
+                      columnspacing=0.4, handletextpad=0.2, markerscale=1.1)
 
         # 右：按领域
         for i, domain_id in enumerate(np.unique(domain_ids)):
@@ -985,7 +999,7 @@ def plot_inference_combined_overview(
             domain_name = _normalize_domain_name(raw_domain_name) if not raw_domain_name.startswith('Domain ') else raw_domain_name
             axes[2].scatter(
                 embeddings_2d[mask, 0], embeddings_2d[mask, 1],
-                c=[domain_colors[i]], label=domain_name,
+                c=[domain_colors[i]], label=domain_name.replace('MovieLens', 'Movies'),
                 alpha=viz.config.scatter_alpha, s=22,
                 edgecolors='white', linewidths=0.4
             )
@@ -995,15 +1009,15 @@ def plot_inference_combined_overview(
             xlabel='t-SNE Dimension 1',
             ylabel='t-SNE Dimension 2'
         )
-        legend2 = axes[2].legend(loc='upper right', fontsize=viz.config.legend_size-1,
-                      frameon=True, fancybox=False, shadow=False, framealpha=0.85,
-                      borderpad=0.5, columnspacing=0.8, handletextpad=0.5, markerscale=1.0)
+        legend2 = axes[2].legend(loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=8,
+                      fontsize=viz.config.legend_size-1, frameon=False,
+                      columnspacing=0.4, handletextpad=0.2, markerscale=1.1)
 
         # 统一两图纵横比与范围
         for ax in [axes[1], axes[2]]:
             ax.grid(True, alpha=0.2, linestyle='--', linewidth=0.5)
             ax.set_facecolor('#fafafa')
-            ax.set_aspect('equal', adjustable='box')
+            ax.set_aspect('auto')
 
         global_xmin, global_xmax = embeddings_2d[:, 0].min(), embeddings_2d[:, 0].max()
         global_ymin, global_ymax = embeddings_2d[:, 1].min(), embeddings_2d[:, 1].max()
@@ -1019,12 +1033,12 @@ def plot_inference_combined_overview(
         axes[2].set_visible(False)
 
     # 总标题（推理，不含 Epoch）
-    fig.suptitle('Inference Overview: Routing and t-SNE', fontsize=viz.config.title_size + 1, fontweight='bold', y=1.0)
+    fig.suptitle('Inference Overview: Routing and t-SNE', fontsize=viz.config.title_size + 1, fontweight='bold', y=0.985)
 
     if viz.config.tight_layout:
         plt.tight_layout()
-        # 恢复常规边距
-        plt.subplots_adjust(wspace=0.12, left=0.06, right=0.97, top=0.88, bottom=0.12)
+        # 恢复常规边距；top 调低并加大 wspace，为总标题留空间、避免与子图标题/色条重叠
+        plt.subplots_adjust(wspace=0.38, left=0.06, right=0.97, top=0.84, bottom=0.12)
 
     if save_plots:
         saved_files = viz._save_figure(fig, 'inference_overview_routing_tsne')
@@ -1322,9 +1336,11 @@ def plot_multi_domain_fourier_comparison_journal(fourier_attn_data: Dict[int, Di
     height_scale = 1.2  # 增大整体高度（原为 0.8）
     figsize = (base_figsize[0] * ncols * 0.8, base_figsize[1] * height_scale)
     
-    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, 
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize,
                             facecolor='white', edgecolor='none')
-    
+    # 统一画布宽高，与推理概览等单行正文图保持一致（每列 5 英寸宽，整体高 5 英寸）
+    fig.set_size_inches(5.0 * ncols, 5.0)
+
     # 标准化axes为1D数组（单行）
     if ncols == 1:
         axes = np.array([axes])

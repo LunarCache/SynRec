@@ -285,6 +285,19 @@ def create_journal_config(journal: str) -> VisualizationConfig:
     """
     config = VisualizationConfig()
     config.apply_journal_preset(journal)
+    # --- Publication legibility override (Revise4, Reviewer #9, Comment 5) ---
+    # Manuscript figures are displayed at text width, so enforce larger fonts,
+    # thicker lines and PNG output. max(...) only ever enlarges existing values;
+    # this is a rendering-only change and does NOT affect any computed data.
+    config.font_size = max(config.font_size, 13)
+    config.title_size = max(config.title_size, 15)
+    config.label_size = max(config.label_size, 13)
+    config.legend_size = max(config.legend_size, 12)
+    config.annotation_fontsize = max(config.annotation_fontsize, 11)
+    config.line_width = max(config.line_width, 2.0)
+    config.marker_size = max(config.marker_size, 7.0)
+    config.dpi = max(config.dpi, 300)
+    config.figure_format = 'png'
     return config
 
 def setup_visualization_environment(config: Optional[VisualizationConfig] = None) -> None:
@@ -311,6 +324,8 @@ def setup_visualization_environment(config: Optional[VisualizationConfig] = None
         'savefig.transparent': config.transparent_background,
         
         'font.family': config.font_family,
+        # 标准无衬线字体（≈ Arial），取代默认 DejaVu Sans，使英文更规范
+        'font.sans-serif': ['Liberation Sans', 'Arial', 'Helvetica', 'Nimbus Sans', 'DejaVu Sans'],
         'font.size': config.font_size,
         'axes.titlesize': config.title_size,
         'axes.labelsize': config.label_size,

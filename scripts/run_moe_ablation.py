@@ -2,11 +2,19 @@ import subprocess
 import os
 import re
 import json
+import argparse
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
 import sys
 from datetime import datetime
+
+# 复用项目统一的期刊样式，保证与其它重绘图风格一致（仅排版，不改数据）
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from visualization.journal_styles import apply_journal_style as _apply_journal_style
+except Exception:
+    _apply_journal_style = None
 
 # --- Configuration ---
 SUMMARY_DIR = "exp/moe_ablation_summary"
@@ -195,72 +203,120 @@ def run_experiment(exp_config, state):
         return None
 
 # --- Plotting Helper ---
-def plot_results(df):
+def plot_results(df, output_dir=SUMMARY_DIR):
     if df is None or df.empty: return
 
-    try:
-        plt.style.use('seaborn-v0_8-whitegrid')
-    except:
-        plt.style.use('ggplot')
-            
-    fig, (ax_exp, ax_dim) = plt.subplots(1, 2, figsize=(14, 6))
+    # 统一期刊风格（与其它重绘图一致：science 样式 + 放大字体）。仅排版，不改数据。
+    if _apply_journal_style is not None:
+        _apply_journal_style('science')
+    else:
+        try:
+            plt.style.use('seaborn-v0_8-whitegrid')
+        except Exception:
+            plt.style.use('ggplot')
+    plt.rcParams.update({
+        'font.size': 15, 'axes.titlesize': 18, 'axes.labelsize': 16,
+        'xtick.labelsize': 16, 'ytick.labelsize': 16, 'legend.fontsize': 14,
+        'lines.linewidth': 2.2, 'lines.markersize': 9,
+        'figure.dpi': 600, 'savefig.dpi': 600, 'savefig.bbox': 'tight',
+        'axes.grid': True, 'grid.alpha': 0.3,
+    })
+
+    # 画布宽高（11 x 5.0，宽高比≈2.2，子图更窄、与正文宽度配合 0.85\textwidth）
+    fig, (ax_exp, ax_dim) = plt.subplots(1, 2, figsize=(11, 5.0))
     
     def add_dual_axis_plot(ax1, df_sub, x_col, x_label, title):
-        if df_sub.empty: 
+        if df_sub.empty:
             ax1.text(0.5, 0.5, "No Data", ha='center')
-            return
+            return None, None
         
         # NDCG (Left Axis)
         color_ndcg = 'tab:blue'
-        ax1.set_xlabel(x_label, fontsize=12)
-        ax1.set_ylabel('NDCG@10', color=color_ndcg, fontsize=12)
-        l1 = ax1.plot(df_sub[x_col], df_sub["NDCG@10"], marker='o', color=color_ndcg, label='NDCG@10', linewidth=2)
+        ax1.set_xlabel(x_label, fontsize=18)
+        ax1.set_ylabel('NDCG@10', color=color_ndcg, fontsize=16)
+        l1 = ax1.plot(df_sub[x_col], df_sub["NDCG@10"], marker='o', color=color_ndcg, label='NDCG@10', linewidth=2.2)
         ax1.tick_params(axis='y', labelcolor=color_ndcg)
         ax1.grid(True, linestyle='--', alpha=0.6)
         
         # HR (Right Axis)
         ax2 = ax1.twinx()
+        # science 样式默认隐藏右脊柱，但双轴图的右轴需要显示
+        ax2.spines['right'].set_visible(True)
+        ax2.spines['top'].set_visible(False)
         color_hr = 'tab:orange'
-        ax2.set_ylabel('Hit Rate@10', color=color_hr, fontsize=12)
-        l2 = ax2.plot(df_sub[x_col], df_sub["HR@10"], marker='s', color=color_hr, label='HR@10', linewidth=2, linestyle='--')
+        ax2.set_ylabel('Hit Rate@10', color=color_hr, fontsize=16)
+        l2 = ax2.plot(df_sub[x_col], df_sub["HR@10"], marker='s', color=color_hr, label='HR@10', linewidth=2.2, linestyle='--')
         ax2.tick_params(axis='y', labelcolor=color_hr)
         ax2.grid(False)
         
-        # Combined Legend
+        # Collect handles for a single shared legend placed at the figure bottom
         lns = l1 + l2
         labs = [l.get_label() for l in lns]
-        ax1.legend(lns, labs, loc='lower right', frameon=True, shadow=True)
-        ax1.set_title(title, fontsize=14, fontweight='bold')
-        
+        ax1.set_title(title, fontsize=18, fontweight='bold')
+
         # Explicitly set x-ticks to match data points for clarity
         unique_x = sorted(df_sub[x_col].unique())
         ax1.set_xticks(unique_x)
         ax1.set_xticklabels(unique_x)
+        return lns, labs
 
     # 1. Plot Experts (Left Subplot)
     df_experts = df[df["hidden_units"] == 64].copy().sort_values("moe_num_experts")
+    leg_handles, leg_labels = None, None
     if not df_experts.empty:
         # Map Total M to Shared Ns (Ns = M - 3)
         df_experts["num_shared"] = df_experts["moe_num_experts"] - 3
-        add_dual_axis_plot(ax_exp, df_experts, "num_shared", "Number of Shared Experts ($N_s$)", "Impact of Shared Expert Capacity")
+        leg_handles, leg_labels = add_dual_axis_plot(ax_exp, df_experts, "num_shared", "Number of Shared Experts ($N_s$)", "Impact of Shared Expert Capacity")
 
     # 2. Plot Hidden Units (Right Subplot)
     df_hidden = df[df["moe_num_experts"] == 4].sort_values("hidden_units")
-    add_dual_axis_plot(ax_dim, df_hidden, "hidden_units", "Hidden Dimension ($d$)", "Impact of Expert Dimensionality")
+    h2, l2_ = add_dual_axis_plot(ax_dim, df_hidden, "hidden_units", "Hidden Dimension ($d$)", "Impact of Expert Dimensionality")
+    if leg_handles is None:
+        leg_handles, leg_labels = h2, l2_
 
-    plt.tight_layout()
+    # Reserve bottom space and place one shared legend below both subplots
+    plt.tight_layout(rect=[0, 0.10, 1, 1])
+    if leg_handles:
+        fig.legend(leg_handles, leg_labels, loc='lower center', ncol=2,
+                   frameon=False, bbox_to_anchor=(0.5, 0.01))
+    os.makedirs(output_dir, exist_ok=True)
     combined_filename = "moe_configuration_ablation.png"
-    plt.savefig(os.path.join(SUMMARY_DIR, combined_filename), dpi=300)
-    print(f"📈 Saved combined plot: {combined_filename}")
+    out_path = os.path.join(output_dir, combined_filename)
+    plt.savefig(out_path, dpi=600)
+    print(f"📈 Saved combined plot: {out_path}")
     plt.close()
 
+def _parse_cli():
+    p = argparse.ArgumentParser(description="MoE configuration ablation runner / plotter")
+    p.add_argument('--plot_only', action='store_true',
+                   help='不训练，直接从已有 CSV 读取结果并绘图')
+    p.add_argument('--from_csv', type=str, default=RESULTS_CSV,
+                   help='结果 CSV 路径 (列: id,moe_num_experts,hidden_units,NDCG@10,HR@10)')
+    p.add_argument('--output_dir', type=str, default=SUMMARY_DIR,
+                   help='图片输出目录')
+    return p.parse_args()
+
 if __name__ == "__main__":
+    cli = _parse_cli()
+
+    # 仅绘图模式：直接读取已有 CSV，复用现有实验数据，不重新训练
+    if cli.plot_only:
+        if not os.path.exists(cli.from_csv):
+            print(f"❌ CSV not found: {cli.from_csv}")
+            sys.exit(1)
+        df = pd.read_csv(cli.from_csv)
+        print(f"📥 Loaded results from {cli.from_csv}:")
+        print(df)
+        plot_results(df, output_dir=cli.output_dir)
+        print("\nDone (plot-only).")
+        sys.exit(0)
+
     if not os.path.exists(SUMMARY_DIR):
         os.makedirs(SUMMARY_DIR)
-        
+
     print(f"State file: {STATE_FILE}")
     state = load_state()
-    
+
     try:
         for exp in experiments:
             run_experiment(exp, state)
@@ -272,5 +328,5 @@ if __name__ == "__main__":
         if df is not None:
             print("\nLatest Results:")
             print(df)
-            plot_results(df)
+            plot_results(df, output_dir=cli.output_dir)
         print("\nDone.")

@@ -306,7 +306,7 @@ def _plot_multi_domain_time_frequency(ax, analysis_results: Dict,
                                      domain_colors: Dict, domain_names: Dict):
     """Plot time-frequency analysis for all domains."""
     ax.set_title('Multi-Domain Time-Frequency Analysis', 
-                fontsize=12, fontweight='bold')
+                fontsize=15, fontweight='bold')
     
     max_length = max(len(result['rating_series']) for result in analysis_results.values())
     
@@ -325,9 +325,9 @@ def _plot_multi_domain_time_frequency(ax, analysis_results: Dict,
                color=color, linewidth=2, alpha=0.8,
                label=f'{domain_name} (User {user_id})')
     
-    ax.set_xlabel('Time Steps', fontsize=11)
-    ax.set_ylabel('Rating Value', fontsize=11)
-    ax.legend(loc='upper right', fontsize=9)
+    ax.set_xlabel('Time Steps', fontsize=14)
+    ax.set_ylabel('Rating Value', fontsize=14)
+    ax.legend(loc='upper right', fontsize=13)
     ax.grid(True, alpha=0.3)
 
 
@@ -335,7 +335,7 @@ def _plot_multi_domain_decomposition(ax, analysis_results: Dict,
                                    domain_colors: Dict, domain_names: Dict):
     """Plot decomposition comparison for all domains."""
     ax.set_title('Multi-Domain Decomposition Comparison',
-                fontsize=12, fontweight='bold')
+                fontsize=15, fontweight='bold')
     
     for domain_id, result in analysis_results.items():
         if not result:
@@ -360,12 +360,12 @@ def _plot_multi_domain_decomposition(ax, analysis_results: Dict,
         
         # Add R² annotation
         ax.text(0.02, 0.98 - domain_id * 0.05, f'{domain_name} R²: {r2:.3f}',
-               transform=ax.transAxes, fontsize=9, color=color,
+               transform=ax.transAxes, fontsize=13, color=color,
                verticalalignment='top')
     
-    ax.set_xlabel('Time Steps', fontsize=11)
-    ax.set_ylabel('Rating Value', fontsize=11)
-    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=8)
+    ax.set_xlabel('Time Steps', fontsize=14)
+    ax.set_ylabel('Rating Value', fontsize=14)
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=13)
     ax.grid(True, alpha=0.3)
 
 
@@ -373,7 +373,7 @@ def _plot_multi_domain_embeddings(ax, analysis_results: Dict,
                                  domain_colors: Dict, domain_names: Dict):
     """Plot embedding space comparison using t-SNE."""
     ax.set_title('Multi-Domain Embedding Space (t-SNE)',
-                fontsize=12, fontweight='bold')
+                fontsize=15, fontweight='bold')
     
     try:
         from sklearn.manifold import TSNE
@@ -426,7 +426,7 @@ def _plot_multi_domain_embeddings(ax, analysis_results: Dict,
                               markerfacecolor=domain_colors[domain_id], 
                               markersize=8, label=domain_names[domain_id])
                 )
-            ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
+            ax.legend(handles=legend_elements, loc='upper right', fontsize=13)
             
         else:
             ax.text(0.5, 0.5, 'No embedding data available', 
@@ -434,17 +434,17 @@ def _plot_multi_domain_embeddings(ax, analysis_results: Dict,
             
     except Exception as e:
         ax.text(0.5, 0.5, f'Embedding analysis failed:\n{str(e)}', 
-               ha='center', va='center', transform=ax.transAxes, fontsize=10)
+               ha='center', va='center', transform=ax.transAxes, fontsize=14)
     
-    ax.set_xlabel('t-SNE Component 1', fontsize=11)
-    ax.set_ylabel('t-SNE Component 2', fontsize=11)
+    ax.set_xlabel('t-SNE Component 1', fontsize=14)
+    ax.set_ylabel('t-SNE Component 2', fontsize=14)
     ax.grid(True, alpha=0.3)
 
 
 def _plot_users_summary_table(ax, analysis_results: Dict,
                              domain_colors: Dict, domain_names: Dict):
     """Plot representative users summary table."""
-    ax.set_title('Representative Users Summary', fontsize=12, fontweight='bold')
+    ax.set_title('Representative Users Summary', fontsize=15, fontweight='bold')
     ax.axis('tight')
     ax.axis('off')
     
@@ -505,9 +505,9 @@ def _plot_independent_time_frequency(ax, result: Dict, domain_color: str, domain
     """Plot independent time-frequency analysis for a single domain."""
     if not result:
         ax.text(0.5, 0.5, 'No data available', ha='center', va='center', 
-               transform=ax.transAxes, fontsize=12, style='italic')
+               transform=ax.transAxes, fontsize=15, style='italic')
         ax.set_title(f'{domain_name}\nTime-Frequency Analysis', 
-                    fontsize=11, fontweight='bold')
+                    fontsize=14, fontweight='bold')
         return
     
     rating_series = result['rating_series']
@@ -540,10 +540,10 @@ def _plot_independent_time_frequency(ax, result: Dict, domain_color: str, domain
             pass
     
     # Formatting
-    ax.set_xlabel('Time Steps', fontsize=10)
-    ax.set_ylabel('Rating Value', fontsize=10)
+    ax.set_xlabel('Time Steps', fontsize=14)
+    ax.set_ylabel('Rating Value', fontsize=14)
     ax.set_title(f'{domain_name} (User {user_id})\nSeq Length: {seq_length}', 
-                fontsize=11, fontweight='bold')
+                fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     
     # Add key metrics as text
@@ -553,7 +553,7 @@ def _plot_independent_time_frequency(ax, result: Dict, domain_color: str, domain
         if metrics.get('peak_T1'):
             info_text += f"\nPeak Period: {metrics['peak_T1']:.1f}"
         ax.text(0.02, 0.98, info_text, transform=ax.transAxes, 
-               fontsize=9, verticalalignment='top', 
+               fontsize=13, verticalalignment='top',
                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
 
 
@@ -561,9 +561,9 @@ def _plot_independent_decomposition(ax, result: Dict, domain_color: str, domain_
     """Plot independent decomposition analysis for a single domain."""
     if not result or 'fft_data' not in result:
         ax.text(0.5, 0.5, 'No decomposition data\navailable', ha='center', va='center', 
-               transform=ax.transAxes, fontsize=12, style='italic')
+               transform=ax.transAxes, fontsize=15, style='italic')
         ax.set_title(f'{domain_name}\nDecomposition Analysis', 
-                    fontsize=11, fontweight='bold')
+                    fontsize=14, fontweight='bold')
         return
     
     rating_series = result['rating_series']
@@ -582,11 +582,11 @@ def _plot_independent_decomposition(ax, result: Dict, domain_color: str, domain_
            alpha=0.5, label='High-Freq', linestyle=':')
     
     # Formatting
-    ax.set_xlabel('Time Steps', fontsize=10)
-    ax.set_ylabel('Rating Value', fontsize=10)
+    ax.set_xlabel('Time Steps', fontsize=14)
+    ax.set_ylabel('Rating Value', fontsize=14)
     ax.set_title(f'{domain_name}\nR² Score: {r2_reg:.3f}', 
-                fontsize=11, fontweight='bold')
-    ax.legend(loc='upper right', fontsize=9)
+                fontsize=14, fontweight='bold')
+    ax.legend(loc='upper right', fontsize=13)
     ax.grid(True, alpha=0.3)
     
     # Add decomposition quality info
@@ -594,7 +594,7 @@ def _plot_independent_decomposition(ax, result: Dict, domain_color: str, domain_
         metrics = result['metrics']
         quality_text = f"Low-Freq Ratio: {metrics.get('low_frac', 0):.3f}\nHigh-Freq Ratio: {metrics.get('high_frac', 0):.3f}"
         ax.text(0.02, 0.02, quality_text, transform=ax.transAxes, 
-               fontsize=9, verticalalignment='bottom',
+               fontsize=13, verticalalignment='bottom',
                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
 
 
@@ -602,9 +602,9 @@ def _plot_independent_fft_spectrum(ax, result: Dict, domain_color: str, domain_n
     """Plot independent FFT magnitude spectrum for a single domain, following cli.py design."""
     if not result or 'fft_data' not in result:
         ax.text(0.5, 0.5, 'No FFT spectrum data\navailable', ha='center', va='center', 
-               transform=ax.transAxes, fontsize=12, style='italic')
+               transform=ax.transAxes, fontsize=15, style='italic')
         ax.set_title(f'{domain_name}\nFFT Magnitude Spectrum', 
-                    fontsize=11, fontweight='bold')
+                    fontsize=14, fontweight='bold')
         return
     
     # Extract FFT data (same as cli.py approach)
@@ -662,14 +662,14 @@ def _plot_independent_fft_spectrum(ax, result: Dict, domain_color: str, domain_n
                 T = int(round(L / max(k, 1)))
                 ax.axvline(k, color="#888888", ls=":", lw=0.8)
                 ax.text(k + 0.5, amp_half[k], f"k={k}\n~{T} pts", 
-                       fontsize=7, color="#444444")
+                       fontsize=13, color="#444444")
     except Exception:
         pass
     
     # Secondary axis: normalized frequency (following cli.py)
     try:
         secax = ax.secondary_xaxis('top', functions=(lambda k: k / L, lambda f: f * L))
-        secax.set_xlabel('Normalized frequency (k/N)', fontsize=9)
+        secax.set_xlabel('Normalized frequency (k/N)', fontsize=13)
     except Exception:
         pass
     
@@ -677,18 +677,18 @@ def _plot_independent_fft_spectrum(ax, result: Dict, domain_color: str, domain_n
     low_frac = metrics.get('low_frac', 0)
     high_frac = metrics.get('high_frac', 0)
     ax.text(0.02, 0.98, f"LowFrac={low_frac:.2f}\nHighFrac={high_frac:.2f}",
-           transform=ax.transAxes, ha="left", va="top", fontsize=8,
+           transform=ax.transAxes, ha="left", va="top", fontsize=13,
            bbox=dict(boxstyle="round", fc="white", ec="#cccccc", alpha=0.8))
     
     # Formatting (following cli.py)
-    ax.set_xlabel("Frequency Index", fontsize=10)
-    ax.set_ylabel("Amplitude", fontsize=10)
+    ax.set_xlabel("Frequency Index", fontsize=14)
+    ax.set_ylabel("Amplitude", fontsize=14)
     ax.set_title(f"{domain_name}\nFFT Magnitude Spectrum", 
-                fontsize=11, fontweight='bold')
+                fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     
     # Legend (following cli.py placement style)
-    ax.legend(loc="upper right", fontsize=8)
+    ax.legend(loc="upper right", fontsize=13)
     
     # Set reasonable axis limits
     ax.set_xlim(0, min(half, len(freqs_half)))

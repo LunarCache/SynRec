@@ -363,6 +363,36 @@ def apply_journal_style(journal: str = 'nature') -> None:
     """便捷函数：应用期刊样式"""
     styles = JournalStyles()
     styles.apply_journal_style(journal)
+    # --- Publication legibility override (Revise4, Reviewer #9, Comment 5) ---
+    # Manuscript figures are placed at text width; the per-journal presets above
+    # use small (7-10 pt) fonts that become illegible once scaled down. Enforce
+    # larger fonts / thicker lines / PNG output here. Rendering-only: this does
+    # not change any plotted data values.
+    rcParams.update({
+        # 统一为标准无衬线字体 Liberation Sans（≈ Arial），数学符号用 stixsans 配套，
+        # 取代默认的 DejaVu Sans，使图中英文更规范、与正文风格协调。仅排版，不改数据。
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Liberation Sans', 'Arial', 'Helvetica', 'Nimbus Sans', 'DejaVu Sans'],
+        'mathtext.fontset': 'stixsans',
+        'font.size': 13,
+        'axes.titlesize': 15,
+        'axes.labelsize': 13,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'legend.fontsize': 12,
+        'figure.titlesize': 16,
+        'lines.linewidth': 2.0,
+        'lines.markersize': 8,
+        'axes.linewidth': 1.2,
+        'grid.linewidth': 0.8,
+        'savefig.format': 'png',
+        'savefig.dpi': 600,
+        'figure.dpi': 600,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.08,
+        'pdf.fonttype': 42,
+        'ps.fonttype': 42,
+    })
 
 def get_journal_config(journal: str = 'nature') -> Dict[str, Any]:
     """便捷函数：获取期刊完整配置"""
