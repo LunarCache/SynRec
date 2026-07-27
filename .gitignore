@@ -1,7 +1,6 @@
 .vscode/
 __pycache__/
 wandb/
-.claude/
 elsarticle/
 new_data/
 mypaper/
@@ -9,7 +8,6 @@ swanlog/
 exp/
 SASREC_training_results_summary.md
 test_*.py
-CLAUDE.md
 AGENTS.md
 history_version/
 manuscript/
