@@ -9,6 +9,8 @@ exp/
 SASREC_training_results_summary.md
 test_*.py
 AGENTS.md
+scripts/*.md
+scripts/**/*.md
 history_version/
 manuscript/
 md/
