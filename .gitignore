@@ -1,5 +1,6 @@
 .vscode/
 __pycache__/
+.ipynb_checkpoints/
 wandb/
 elsarticle/
 new_data/
@@ -15,3 +16,7 @@ history_version/
 manuscript/
 md/
 Revise/
+
+# Generated artifacts from vendored baseline implementations
+baselines/INSPEQ/INSPEQ-master/data/*_5_5*.txt
+baselines/INSPEQ/INSPEQ-master/output/
